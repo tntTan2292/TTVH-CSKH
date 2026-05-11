@@ -78,7 +78,6 @@ async def upload_excel(file: UploadFile = File(...)):
 
         req_cols = CONFIG["REQUIRED_COLUMNS"]
         col_map = {key: i for key, display_name in req_cols.items() for i, h in enumerate(df.columns) if clean_text(display_name).lower() in h.lower()}
-        
         df = df.drop_duplicates(subset=[df.columns[col_map["tracking_id"]]], keep='last')
         customer_info = clean_text(df_raw.iloc[0, 0])
         customer_id = customer_info.split('-')[0].strip() if '-' in customer_info else "UNKNOWN"
@@ -104,7 +103,6 @@ async def upload_excel(file: UploadFile = File(...)):
                     acc_val = row.iloc[col_map["acceptance_date"]]
                     if not pd.isna(acc_val): aging = (now - pd.to_datetime(acc_val)).days
                 except: pass
-                # TrackingID, CustomerID, Addr(1), BCVH(3), Province(4), AccDate, Result, Status, Aging, SLA, Session
                 processed_orders.append((tid, customer_id, clean_text(row.iloc[1]), clean_text(row.iloc[3]), clean_text(row.iloc[4]), str(row.iloc[col_map["acceptance_date"]]), clean_text(row.iloc[col_map["result_final"]]), 'Thành công' if is_success else 'Chưa thành công', max(0, int(aging)), (aging > CONFIG["SLA_THRESHOLD_DAYS"] and not is_success), session_id))
 
             cursor.execute('UPDATE import_sessions SET unique_ids = ?, success_count = ?, status = ? WHERE session_id = ?', (len(processed_orders), success_count, "SUCCESS", session_id))
@@ -127,35 +125,54 @@ async def get_stats():
     conn = get_db_conn()
     cursor = conn.cursor()
     session = cursor.execute("SELECT * FROM import_sessions WHERE status='SUCCESS' ORDER BY session_id DESC LIMIT 1").fetchone()
-    if not session: return {"error": "No Snapshot Found"}
+    if not session: return {"error": "No Data"}
     sid = session['session_id']
     kpis = cursor.execute('SELECT COUNT(*) as total, SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as success, SUM(CASE WHEN is_sla_violation=1 THEN 1 ELSE 0 END) as sla FROM orders WHERE session_id=?', (sid,)).fetchone()
+    conn.close()
+    return {
+        "session_info": {"id": sid, "timestamp": session['imported_at'], "filename": session['filename']},
+        "kpis": {"total": kpis['total'], "success": kpis['success'], "pending": kpis['total'] - kpis['success'], "sla": kpis['sla']}
+    }
+
+# BẮT BUỘC: Chuẩn hóa API Radar theo format labels/datasets
+@app.get("/api/dashboard/radar")
+async def get_radar_data():
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    session = cursor.execute("SELECT session_id FROM import_sessions WHERE status='SUCCESS' ORDER BY session_id DESC LIMIT 1").fetchone()
+    if not session: return {"labels": [], "datasets": []}
     
-    # RADAR PIPELINE: Lấy Top 8 Tỉnh có sản lượng lớn nhất
-    prov_rows = cursor.execute('''
+    sid = session['session_id']
+    log_terminal(f"Radar Aggregation for Session {sid}")
+    
+    # Ưu tiên theo Tỉnh
+    rows = cursor.execute('''
         SELECT province, COUNT(*) as total, 
         SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success 
         FROM orders WHERE session_id = ? 
         GROUP BY province ORDER BY total DESC LIMIT 8
     ''', (sid,)).fetchall()
     
-    radar_data = []
-    for r in prov_rows:
-        name = r['province'] or "Khác"
-        rate = round((r['success'] / r['total']) * 100) if r['total'] > 0 else 0
-        radar_data.append({"subject": name, "A": rate})
-
-    # Nếu Tỉnh rỗng, dùng BCVH làm phương án dự phòng cho Radar
-    if not radar_data:
-        bcvh_rows = cursor.execute('SELECT post_office_name, COUNT(*) as total, SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success FROM orders WHERE session_id = ? GROUP BY post_office_name ORDER BY total DESC LIMIT 8', (sid,)).fetchall()
-        for r in bcvh_rows:
-            radar_data.append({"subject": r['post_office_name'][:10], "A": round(r['success']*100/r['total']) if r['total']>0 else 0})
+    labels = [r['province'] or "Khác" for r in rows if r['province']]
+    data = [round(r['success']*100/r['total']) if r['total']>0 else 0 for r in rows if r['province']]
+    
+    # Fallback sang BCVH nếu Tỉnh rỗng
+    if not labels:
+        log_terminal("Province empty, falling back to BCVH...")
+        rows = cursor.execute('SELECT post_office_name, COUNT(*) as total, SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success FROM orders WHERE session_id = ? GROUP BY post_office_name ORDER BY total DESC LIMIT 8', (sid,)).fetchall()
+        labels = [r['post_office_name'][:10] for r in rows]
+        data = [round(r['success']*100/r['total']) if r['total']>0 else 0 for r in rows]
 
     conn.close()
+    log_terminal(f"Radar Labels: {labels}")
     return {
-        "session_info": {"id": sid, "timestamp": session['imported_at'], "filename": session['filename']},
-        "kpis": {"total": kpis['total'], "success": kpis['success'], "pending": kpis['total'] - kpis['success'], "sla": kpis['sla']},
-        "radarData": radar_data
+        "labels": labels,
+        "datasets": [
+            {
+                "label": "Hiệu suất (%)",
+                "data": data
+            }
+        ]
     }
 
 @app.get("/api/dashboard/bcvh-summary")
