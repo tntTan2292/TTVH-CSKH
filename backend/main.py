@@ -56,7 +56,7 @@ init_db()
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"--- [DEEP DEBUG] START IMPORT: {file.filename} ---")
+    log_terminal(f"--- [FORENSIC DEBUG] START IMPORT: {file.filename} ---")
     session_id = None
     file_path = os.path.join(UPLOAD_DIR, f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
     try:
@@ -66,40 +66,55 @@ async def upload_excel(file: UploadFile = File(...)):
         
         with pd.ExcelFile(file_path, engine='openpyxl') as xls:
             target_sheet = 'DanhSach' if 'DanhSach' in xls.sheet_names else xls.sheet_names[0]
-            df_raw = pd.read_excel(xls, sheet_name=target_sheet, header=None, nrows=10)
+            # EVIDENCE: Đọc 10 dòng thô để xác định Header
+            df_raw_10 = pd.read_excel(xls, sheet_name=target_sheet, header=None, nrows=10)
+            log_terminal(f"RAW FIRST 10 ROWS:\n{df_raw_10.to_dict(orient='records')}")
             
             header_row_idx = 1 
-            for i, row in df_raw.iterrows():
+            for i, row in df_raw_10.iterrows():
                 row_str = " ".join([clean_text(val).lower() for val in row if not pd.isna(val)])
-                if "số hiệu" in row_str:
+                if "số hiệu" in row_str or "mã bưu gửi" in row_str:
                     header_row_idx = i
+                    log_terminal(f"DETECTED HEADER AT ROW: {i+1}")
                     break
             
             df = pd.read_excel(xls, sheet_name=target_sheet, header=header_row_idx)
-            # EVIDENCE 1: In toàn bộ detected columns
-            log_terminal(f"1. DETECTED COLUMNS: {df.columns.tolist()}")
+            log_terminal(f"DETECTED COLUMNS: {df.columns.tolist()}")
             df.columns = [clean_text(h) for h in df.columns]
 
-        # EVIDENCE 2: Mapping Step
+        # SEMANTIC MAPPING LOGIC
         mapping = {}
-        headers = [h.lower() for h in df.columns]
-        for key, display_name in CONFIG["REQUIRED_COLUMNS"].items():
-            target = clean_text(display_name).lower()
-            for i, h in enumerate(headers):
-                if target in h:
-                    mapping[key] = i
-                    break
-            if key not in mapping: 
-                log_terminal(f"   !!! MISSING COLUMN: {display_name} (Target: {target})")
-                raise Exception(f"Thiếu cột: {display_name}")
+        headers_lower = [h.lower() for h in df.columns]
+        
+        # Helper để tìm cột tốt nhất
+        def find_best_col(target_keywords, exclude_keywords=[]):
+            # Ưu tiên khớp chính xác hoặc có chữ "Tên"
+            for i, h in enumerate(headers_lower):
+                if any(tk in h for tk in target_keywords):
+                    if not any(ek in h for ek in exclude_keywords):
+                        return i
+            # Nếu không tìm được cột "sạch", lấy cột đầu tiên chứa từ khóa
+            for i, h in enumerate(headers_lower):
+                if any(tk in h for tk in target_keywords):
+                    return i
+            return None
 
-        log_terminal(f"2. MAPPING FINAL: {mapping}")
+        # Định nghĩa các Alias cụ thể
+        mapping["tracking_id"] = find_best_col(["số hiệu", "mã bưu gửi"])
+        mapping["result_final"] = find_best_col(["kết quả phát", "trạng thái phát", "kết quả cuối cùng"])
+        mapping["province"] = find_best_col(["tỉnh phát", "tỉnh"], ["mã tỉnh"])
+        mapping["post_office"] = find_best_col(["tên bcvh", "bcvh", "bưu cục vận hành"], ["mã bcvh", "mã bc"])
+        mapping["acceptance_date"] = find_best_col(["ngày chấp nhận", "ngày gửi"])
+        mapping["address"] = find_best_col(["địa chỉ"], ["mã"])
 
-        # EVIDENCE 3: Sample Data
-        log_terminal(f"3. DATA SAMPLE (Top 3):\n{df.head(3).to_dict(orient='records')}")
+        log_terminal(f"FINAL SEMANTIC MAPPING: {mapping}")
+        
+        for k, v in mapping.items():
+            if v is None and k in ["tracking_id", "result_final", "post_office"]:
+                raise Exception(f"Không thể xác định cột: {k}")
 
         df = df.drop_duplicates(subset=[df.columns[mapping["tracking_id"]]], keep='last')
-        customer_info = clean_text(df_raw.iloc[0, 0])
+        customer_info = clean_text(df_raw_10.iloc[0, 0])
         customer_id = customer_info.split('-')[0].strip() if '-' in customer_info else "UNKNOWN"
         customer_name = customer_info.split('-')[1].strip() if '-' in customer_info else customer_info
 
@@ -114,12 +129,12 @@ async def upload_excel(file: UploadFile = File(...)):
             success_count = 0
             now = datetime.now()
             
-            non_empty_prov = 0
             for _, row in df.iterrows():
                 tid = clean_text(row.iloc[mapping["tracking_id"]])
                 if not tid: continue
                 
                 res_val = clean_text(row.iloc[mapping["result_final"]]).lower()
+                # Kiểm tra kỹ từ khóa thành công
                 is_success = any(k in res_val for k in CONFIG["SUCCESS_KEYWORDS"]) and not any(k in res_val for k in CONFIG["FAIL_KEYWORDS"])
                 if is_success: success_count += 1
                 
@@ -129,14 +144,11 @@ async def upload_excel(file: UploadFile = File(...)):
                     if not pd.isna(acc_val): aging = (now - pd.to_datetime(acc_val)).days
                 except: pass
 
-                prov = clean_text(row.iloc[mapping["province"]])
-                if prov: non_empty_prov += 1
-
                 processed_orders.append((
                     tid, customer_id, 
-                    clean_text(row.iloc[mapping["address"]]), 
+                    clean_text(row.iloc[mapping["address"]]) if mapping["address"] is not None else "", 
                     clean_text(row.iloc[mapping["post_office"]]), 
-                    prov, 
+                    clean_text(row.iloc[mapping["province"]]) if mapping["province"] is not None else "", 
                     str(row.iloc[mapping["acceptance_date"]]), 
                     clean_text(row.iloc[mapping["result_final"]]), 
                     'Thành công' if is_success else 'Chưa thành công', 
@@ -149,14 +161,14 @@ async def upload_excel(file: UploadFile = File(...)):
             cursor.executemany('INSERT OR REPLACE INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?)', processed_orders)
             cursor.execute("COMMIT")
             
-            log_terminal(f"4. IMPORT EVIDENCE: Session {session_id}, Rows={len(processed_orders)}, Valid Prov={non_empty_prov}")
+            log_terminal(f"IMPORT COMPLETE: Session {session_id}, Success Count = {success_count} (Goal: 256)")
             return {"message": "Success", "session_id": session_id}
         except Exception as e:
             cursor.execute("ROLLBACK")
             raise e
         finally: conn.close()
     except Exception as e:
-        log_terminal(f"!!! CRITICAL ERR: {str(e)}")
+        log_terminal(f"CRITICAL ERR: {str(e)}")
         return JSONResponse(status_code=500, content={"detail": str(e)})
     finally:
         if os.path.exists(file_path): os.remove(file_path)
@@ -166,53 +178,25 @@ async def get_radar_data():
     conn = get_db_conn()
     cursor = conn.cursor()
     session = cursor.execute("SELECT session_id FROM import_sessions WHERE status='SUCCESS' ORDER BY session_id DESC LIMIT 1").fetchone()
-    if not session: return {"labels": ["NO_DATA"], "datasets": [{"label": "Status", "data": [0]}]}
-    
+    if not session: return {"labels": [], "datasets": []}
     sid = session['session_id']
-    log_terminal(f"--- [RADAR AGGREGATION DEBUG] ---")
-    
-    # EVIDENCE 4: Check raw table state
-    total_db = cursor.execute("SELECT COUNT(*) FROM orders WHERE session_id = ?", (sid,)).fetchone()[0]
-    prov_db = cursor.execute("SELECT COUNT(*) FROM orders WHERE session_id = ? AND province != '' AND province IS NOT NULL", (sid,)).fetchone()[0]
-    log_terminal(f"DB State: Total={total_db}, Non-Empty Prov={prov_db}")
-    
-    # Aggregate Step
     rows = cursor.execute('''
         SELECT province as grp, COUNT(*) as total, 
         SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success 
         FROM orders WHERE session_id = ? AND province != '' AND province IS NOT NULL
         GROUP BY province ORDER BY total DESC LIMIT 8
     ''', (sid,)).fetchall()
-    
-    labels = [r['grp'] for r in rows]
-    data = [round(r['success']*100/r['total']) if r['total']>0 else 0 for r in rows]
-    
-    # FALLBACK to BCVH if Province empty
-    if not labels or len(labels) < 2:
-        log_terminal("Fallback: Switching to BCVH Aggregation...")
+    if not rows or len(rows) < 2:
         rows = cursor.execute('''
             SELECT post_office_name as grp, COUNT(*) as total, 
             SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success 
             FROM orders WHERE session_id = ? 
             GROUP BY post_office_name ORDER BY total DESC LIMIT 8
         ''', (sid,)).fetchall()
-        labels = [r['grp'][:10] for r in rows]
-        data = [round(r['success']*100/r['total']) if r['total']>0 else 0 for r in rows]
-
-    # TEMPORARY FORCE TEST: Nếu tất cả rỗng, trả dữ liệu giả để xác minh Chart UI
-    if not labels:
-        log_terminal("!!! FORCE TEST: Sending Mock Data because aggregation is EMPTY")
-        labels = ["TEST_A", "TEST_B", "TEST_C"]
-        data = [50, 80, 60]
-
+    labels = [r['grp'][:15] for r in rows]
+    data = [round(r['success']*100/r['total']) if r['total']>0 else 0 for r in rows]
     conn.close()
-    log_terminal(f"FINAL RADAR LABELS: {labels}")
-    log_terminal(f"FINAL RADAR DATA: {data}")
-    
-    return {
-        "labels": labels,
-        "datasets": [{"label": "Hiệu suất (%)", "data": data}]
-    }
+    return {"labels": labels, "datasets": [{"label": "Hiệu suất (%)", "data": data}]}
 
 @app.get("/api/dashboard/stats")
 async def get_stats():
