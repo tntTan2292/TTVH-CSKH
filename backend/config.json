@@ -1,0 +1,13 @@
+{
+    "SLA_THRESHOLD_DAYS": 3,
+    "REQUIRED_COLUMNS": {
+        "tracking_id": "Số hiệu BG",
+        "result_final": "Kết quả phát cuối cùng",
+        "province": "Tỉnh",
+        "acceptance_date": "Ngày chấp nhận"
+    },
+    "SUCCESS_KEYWORDS": ["thành công", "đã phát"],
+    "FAIL_KEYWORDS": ["không"],
+    "MAX_UPLOAD_SIZE_MB": 50,
+    "TIMEZONE": "Asia/Ho_Chi_Minh"
+}

@@ -1,30 +1,19 @@
 @echo off
-title VNPost Hue VIP Dashboard Server
-echo Starting VNPost Hue VIP Dashboard...
+title VNPOST HUE DASHBOARD STARTER
+cd /d "d:\Antigravity - Project - TTVH\CSKH"
 
-cd /d "%~dp0backend"
+echo Starting Backend API on PORT 8010...
+start "BACKEND_API_8010" cmd /c "python backend/main.py"
 
-:: Check if python is available
-python --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo Python is not installed or not in PATH!
-    pause
-    exit /b
-)
+timeout /t 3
+
+echo Starting Frontend Dashboard on PORT 8088...
+start "FRONTEND_DASHBOARD_8088" cmd /c "python serve_dashboard.py"
 
 echo.
-echo === SYSTEM INFO ===
-echo Server is running on:
-for /f "tokens=2 delims=:" %%i in ('ipconfig ^| findstr "IPv4"') do (
-    echo   http:%%i:8088
-)
-echo ===================
-echo.
-
-:: Open the dashboard automatically
-start http://localhost:8088
-
-:: Run the server
-python main.py
-
+echo ==================================================
+echo SYSTEMS ARE RUNNING
+echo URL: http://localhost:8088
+echo API: http://localhost:8010/health
+echo ==================================================
 pause

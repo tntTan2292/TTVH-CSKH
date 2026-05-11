@@ -4,248 +4,192 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VNPOST HUE - EXECUTIVE COMMAND CENTER</title>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/antd/5.12.2/reset.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/antd/5.12.2/antd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/recharts/umd/Recharts.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/antd@5.12.2/dist/antd.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antd@5.12.2/dist/reset.css">
+    <script src="https://cdn.jsdelivr.net/npm/recharts@2.10.3/umd/Recharts.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.5/babel.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --primary: #003a8c;
-            --accent: #fadb14;
-            --danger: #ff4d4f;
-            --bg: #f0f2f5;
-            --card-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        }
-        body { margin: 0; font-family: 'Outfit', sans-serif; background: var(--bg); overflow-x: hidden; }
-        
-        /* FIX: Thêm padding-top cho header để không bị chắn */
-        .header {
-            background: var(--primary);
-            color: white;
-            padding: 16px 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-            border-bottom: 3px solid var(--accent);
-        }
-        .header h1 { margin: 0; font-size: 18px; color: white; display: flex; align-items: center; text-transform: uppercase; letter-spacing: 1px; }
-        
-        .main-container { padding: 24px; max-width: 1600px; margin: 0 auto; }
-        
-        .kpi-card {
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: var(--card-shadow);
-            border-left: 5px solid var(--primary);
-            transition: transform 0.2s;
-        }
-        .kpi-card:hover { transform: translateY(-5px); }
-        .kpi-value { font-size: 32px; font-weight: 700; margin: 8px 0; color: #262626; }
-        .kpi-label { color: #8c8c8c; font-size: 12px; text-transform: uppercase; font-weight: 600; }
-        
-        .section-card {
-            background: white;
-            border-radius: 12px;
-            padding: 24px;
-            box-shadow: var(--card-shadow);
-            margin-bottom: 24px;
-            height: 100%;
-        }
-        .section-title {
-            font-size: 16px;
-            font-weight: 700;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: #434343;
-        }
-        
-        .status-tag { border-radius: 4px; padding: 2px 8px; font-weight: 600; font-size: 12px; }
-        .risk-high { background: #fff1f0; color: #cf1322; border: 1px solid #ffa39e; }
-        .risk-low { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
-
-        .ant-table-thead > tr > th { background: #fafafa !important; font-weight: 700 !important; }
-        .ant-progress-inner { background-color: #f5f5f5; }
+        :root { --primary: #001529; --accent: #fadb14; --danger: #ff4d4f; --bg: #000c17; --card-bg: #001529; --text: #ffffff; }
+        body { margin: 0; font-family: 'Outfit', sans-serif; background: var(--bg); color: var(--text); overflow-x: hidden; }
+        .header { background: var(--primary); padding: 12px 24px; border-bottom: 2px solid var(--accent); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; }
+        .main-container { padding: 16px; max-width: 1920px; margin: 0 auto; }
+        .executive-card { background: var(--card-bg); border-radius: 8px; padding: 16px; border: 1px solid rgba(255,255,255,0.1); height: 100%; min-height: 100px; }
+        .kpi-value { font-size: 32px; font-weight: 700; color: var(--accent); line-height: 1.2; }
+        .kpi-label { font-size: 11px; text-transform: uppercase; color: rgba(255,255,255,0.5); letter-spacing: 1px; margin-bottom: 8px; }
+        .ant-table { background: transparent !important; color: white !important; }
+        .ant-table-thead > tr > th { background: rgba(255,255,255,0.05) !important; color: rgba(255,255,255,0.6) !important; border-bottom: 1px solid rgba(255,255,255,0.1) !important; font-size: 11px; }
+        .ant-table-tbody > tr > td { border-bottom: 1px solid rgba(255,255,255,0.05) !important; font-size: 12px; }
+        .ant-table-cell { color: white !important; }
+        .ant-empty-description { color: rgba(255,255,255,0.5) !important; }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
-        const { Layout, Row, Col, Card, Statistic, Table, Tag, Progress, Button, message, Modal, Space, Empty } = window.antd;
-        const { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer, Legend, PieChart, Pie, Cell, Tooltip } = window.Recharts;
+        const { useState, useEffect, Component } = React;
+        const { Layout, Row, Col, Table, Tag, Progress, Button, message, Space, Typography, Badge, Modal, Result, Empty } = window.antd;
+        const { Text, Title } = Typography;
+        const { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar, Tooltip: ReTooltip } = window.Recharts || {};
+        const API_BASE = "http://localhost:8010/api/dashboard";
+
+        // 1. Error Boundary Component
+        class ErrorBoundary extends Component {
+            constructor(props) { super(props); this.state = { hasError: false }; }
+            static getDerivedStateFromError(error) { return { hasError: true }; }
+            render() {
+                if (this.state.hasError) return <div style={{padding: 20, color: '#ff4d4f', border: '1px solid #ff4d4f', borderRadius: 8}}>⚠️ Widget Crash - Vui lòng F5</div>;
+                return this.props.children;
+            }
+        }
 
         const App = () => {
-            const [data, setData] = useState(null);
+            const [stats, setStats] = useState(null);
+            const [bcvhData, setBcvhData] = useState([]);
+            const [bottlenecks, setBottlenecks] = useState([]);
+            const [slaRisk, setSlaRisk] = useState([]);
             const [loading, setLoading] = useState(true);
 
-            const fetchData = async () => {
+            const fetchAll = async () => {
+                setLoading(true);
                 try {
-                    const res = await fetch('http://localhost:8088/stats');
-                    const json = await res.json();
-                    if (json.error) message.error(json.error);
-                    else setData(json);
-                } catch (err) {
-                    message.error("Không thể kết nối Server!");
-                } finally {
-                    setLoading(false);
-                }
+                    const responses = await Promise.all([
+                        fetch(`${API_BASE}/stats`).then(r => r.json()),
+                        fetch(`${API_BASE}/bcvh-summary`).then(r => r.json()),
+                        fetch(`${API_BASE}/bcvh-bottleneck`).then(r => r.json()),
+                        fetch(`${API_BASE}/sla-risk`).then(r => r.json())
+                    ]);
+                    // Defensive: Kiểm tra nếu API trả về lỗi thay vì dữ liệu
+                    const [s, b, n, r] = responses;
+                    setStats(s && !s.error ? s : null);
+                    setBcvhData(Array.isArray(b) ? b : []);
+                    setBottlenecks(Array.isArray(n) ? n : []);
+                    setSlaRisk(Array.isArray(r) ? r : []);
+                } catch (err) { 
+                    console.error("Fetch Error:", err);
+                    message.error("Lỗi kết nối Backend 8010"); 
+                } finally { setLoading(false); }
             };
 
-            useEffect(() => { fetchData(); }, []);
+            useEffect(() => { fetchAll(); }, []);
 
             const handleUpload = async () => {
                 const input = document.createElement('input');
-                input.type = 'file';
+                input.type = 'file'; input.accept = '.xlsx';
                 input.onchange = async (e) => {
-                    const file = e.target.files[0];
-                    const formData = new FormData();
-                    formData.append('file', file);
-                    setLoading(true);
+                    const formData = new FormData(); formData.append('file', e.target.files[0]);
+                    const hide = message.loading('Đang thẩm định Snapshot...', 0);
                     try {
-                        const res = await fetch('http://localhost:8088/upload', { method: 'POST', body: formData });
-                        const json = await res.json();
-                        message.success(json.message || "Đã nạp dữ liệu thành công!");
-                        fetchData();
-                    } catch (err) {
-                        message.error("Lỗi nạp file!");
-                    } finally {
-                        setLoading(false);
-                    }
+                        const res = await fetch(`http://localhost:8010/upload`, { method: 'POST', body: formData });
+                        if (res.ok) { message.success("Snapshot Created!"); fetchAll(); }
+                        else { const j = await res.json(); Modal.error({ title: 'Import Error', content: j.detail }); }
+                    } catch (err) { message.error("Upload Failed"); }
+                    finally { hide(); }
                 };
                 input.click();
             };
 
-            if (!data) return <div style={{padding: 50, textAlign: 'center'}}><Progress status="active" /></div>;
+            // Loading state
+            if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#000c17', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#fadb14" /><p style={{color: 'white', marginTop: 16}}>Khởi tạo Operational Intelligence...</p></div>;
 
-            const provinceCols = [
-                { title: 'TỈNH PHÁT', dataIndex: 'province', key: 'province' },
-                { title: 'TỔNG ĐƠN', dataIndex: 'total', key: 'total', sorter: (a, b) => a.total - b.total },
-                { title: 'THÀNH CÔNG', dataIndex: 'success', key: 'success', render: (v) => <span style={{color: '#52c41a', fontWeight: 700}}>{v}</span> },
-                { title: 'HIỆU SUẤT', dataIndex: 'rate', key: 'rate', render: (v) => <Tag color={v > 80 ? 'green' : v > 50 ? 'orange' : 'red'}>{v}%</Tag> },
-                { title: 'CHƯA PHÁT', dataIndex: 'unsuccessful', key: 'unsuccessful', render: (v) => <span style={{color: '#1890ff'}}>{v} đơn</span> }
-            ];
+            // Empty state
+            if (!stats) return (
+                <Layout style={{minHeight: '100vh', background: 'var(--bg)'}}>
+                    <div className="header"><Title level={4} style={{color: 'white', margin: 0}}>VNPOST HUE DOC</Title></div>
+                    <div style={{padding: 100, textAlign: 'center'}}>
+                        <Result status="info" title={<span style={{color: 'white'}}>Executive Center Sẵn sàng</span>} subTitle={<span style={{color: 'rgba(255,255,255,0.5)'}}>Chưa có Snapshot dữ liệu thành công trong hệ thống.</span>} extra={<Button type="primary" size="large" onClick={handleUpload} style={{background: 'var(--accent)', color: 'black', border: 'none'}}>BẮT ĐẦU NẠP DỮ LIỆU</Button>} />
+                    </div>
+                </Layout>
+            );
 
             return (
-                <Layout>
+                <ErrorBoundary>
+                <Layout style={{minHeight: '100vh', background: 'var(--bg)'}}>
                     <div className="header">
-                        <h1>
-                            <span style={{fontSize: 24, marginRight: 12}}>📮</span>
-                            VNPOST HUE <span style={{color: var(--accent), marginLeft: 8, fontSize: 12, opacity: 0.8}}>| EXECUTIVE COMMAND CENTER</span>
-                        </h1>
+                        <Space size="large">
+                            <Title level={4} style={{color: 'white', margin: 0, letterSpacing: 1}}>VNPOST HUE <span style={{color: 'var(--accent)', fontSize: 12}}>DOC</span></Title>
+                            <Tag color="gold" style={{background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)'}}>SNAPSHOT V{stats?.session_info?.id ?? '0'}</Tag>
+                        </Space>
                         <Space>
-                            <span style={{marginRight: 20, color: '#fadb14', fontWeight: 600}}>Khu vực: {data.customer.name}</span>
-                            <Button type="primary" icon={<span>📥</span>} onClick={handleUpload} style={{background: '#52c41a', borderColor: '#52c41a'}}>NẠP DỮ LIỆU</Button>
-                            <Button icon={<span>🔄</span>} onClick={fetchData} />
+                            <Button type="primary" onClick={handleUpload} style={{background: 'var(--accent)', color: 'black', fontWeight: 600, border: 'none'}}>IMPORT DATA</Button>
+                            <Button icon={<span>🔄</span>} onClick={fetchAll} ghost />
                         </Space>
                     </div>
 
                     <div className="main-container">
-                        <Row gutter={[24, 24]}>
-                            <Col span={6}>
-                                <div className="kpi-card">
-                                    <div className="kpi-label">Tổng sản lượng</div>
-                                    <div className="kpi-value"><span style={{fontSize: 20}}>🌐</span> {data.kpis.total}</div>
-                                </div>
-                            </Col>
-                            <Col span={6}>
-                                <div className="kpi-card">
-                                    <div className="kpi-label">Đã phát thành công</div>
-                                    <div className="kpi-value" style={{color: '#52c41a'}}><span style={{fontSize: 20}}>✅</span> {data.kpis.success}</div>
-                                    <Progress percent={Math.round(data.kpis.success*100/data.kpis.total)} size="small" strokeColor="#52c41a" />
-                                </div>
-                            </Col>
-                            <Col span={6}>
-                                <div className="kpi-card">
-                                    <div className="kpi-label">Chưa phát được</div>
-                                    <div className="kpi-value" style={{color: '#faad14'}}><span style={{fontSize: 20}}>🕒</span> {data.kpis.pending}</div>
-                                </div>
-                            </Col>
-                            <Col span={6}>
-                                <div className="kpi-card" style={{borderColor: 'var(--danger)', background: '#fff1f0'}}>
-                                    <div className="kpi-label">Rủi ro SLA (>3 ngày)</div>
-                                    <div className="kpi-value" style={{color: 'var(--danger)'}}><span style={{fontSize: 20}}>🚨</span> {data.kpis.sla}</div>
+                        <Row gutter={[16, 16]}>
+                            {/* KPI CARDS - Defensive Rendering */}
+                            <Col span={6}><div className="executive-card"><div className="kpi-label">Tổng sản lượng</div><div className="kpi-value">{(stats?.kpis?.total ?? 0).toLocaleString()}</div></div></Col>
+                            <Col span={6}><div className="executive-card"><div className="kpi-label">Phát thành công</div><div className="kpi-value" style={{color: '#52c41a'}}>{(stats?.kpis?.success ?? 0).toLocaleString()}</div><Progress percent={Math.round((stats?.kpis?.success ?? 0)*100/(stats?.kpis?.total ?? 1))} size="small" strokeColor="#52c41a" trailColor="rgba(255,255,255,0.1)" /></div></Col>
+                            <Col span={6}><div className="executive-card"><div className="kpi-label">Tồn đang xử lý</div><div className="kpi-value" style={{color: '#faad14'}}>{(stats?.kpis?.pending ?? 0).toLocaleString()}</div></div></Col>
+                            <Col span={6}><div className="executive-card" style={{borderColor: 'var(--danger)'}}><div className="kpi-label">Vi phạm SLA</div><div className="kpi-value" style={{color: 'var(--danger)'}}>{(stats?.kpis?.sla ?? 0).toLocaleString()}</div></div></Col>
+
+                            {/* BCVH TABLE */}
+                            <Col span={12}>
+                                <div className="executive-card">
+                                    <Title level={5} style={{color: 'white', marginBottom: 16}}>📊 Hiệu suất Bưu cục Vận hành (BCVH)</Title>
+                                    <Table dataSource={bcvhData || []} columns={[
+                                        { title: 'BƯU CỤC', dataIndex: 'name', key: 'name' },
+                                        { title: 'TỔNG', dataIndex: 'total', key: 'total', align: 'right' },
+                                        { title: 'THÀNH CÔNG', dataIndex: 'success', key: 'success', align: 'right', render: (v) => <span style={{color: '#b7eb8f'}}>{v}</span> },
+                                        { title: 'SLA', dataIndex: 'sla', key: 'sla', align: 'right', render: (v) => <span style={{color: v > 0 ? 'var(--danger)' : 'inherit'}}>{v}</span> },
+                                        { title: 'TỶ LỆ (%)', dataIndex: 'rate', key: 'rate', align: 'center', render: (v) => <Tag color={v > 90 ? 'green' : 'orange'}>{v}%</Tag> }
+                                    ]} pagination={{pageSize: 8}} size="small" locale={{ emptyText: <Empty description="Không có dữ liệu BCVH" /> }} />
                                 </div>
                             </Col>
 
-                            <Col span={14}>
-                                <div className="section-card">
-                                    <div className="section-title"><span>🧭</span> Phân tích Hiệu suất theo Tỉnh phát</div>
-                                    <Table 
-                                        dataSource={data.provinceSummary} 
-                                        columns={provinceCols} 
-                                        pagination={{pageSize: 7}}
-                                        size="small"
-                                    />
-                                </div>
-                            </Col>
-
-                            <Col span={10}>
-                                <div className="section-card">
-                                    <div className="section-title"><span>🎯</span> Bản đồ Hiệu suất (%)</div>
-                                    <div style={{height: 350}}>
-                                        {data.radarData && data.radarData.length > 0 ? (
+                            {/* RADAR CHART - Defensive */}
+                            <Col span={6}>
+                                <div className="executive-card">
+                                    <Title level={5} style={{color: 'white', marginBottom: 16}}>🎯 Radar Snapshot</Title>
+                                    <div style={{height: 300}}>
+                                        {ResponsiveContainer && stats?.radarData?.length > 0 ? (
                                             <ResponsiveContainer width="100%" height="100%">
-                                                <RadarChart cx="50%" cy="50%" outerRadius="70%" data={data.radarData}>
-                                                    <PolarGrid stroke="#f0f0f0" />
-                                                    <PolarAngleAxis dataKey="subject" tick={{fontSize: 10, fill: '#8c8c8c'}} />
-                                                    <Radar name="Hiệu suất (%)" dataKey="A" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.6} />
-                                                    <Tooltip />
-                                                    <Legend />
+                                                <RadarChart cx="50%" cy="50%" outerRadius="70%" data={stats.radarData}>
+                                                    <PolarGrid stroke="rgba(255,255,255,0.1)" />
+                                                    <PolarAngleAxis dataKey="subject" tick={{fontSize: 9, fill: 'rgba(255,255,255,0.5)'}} />
+                                                    <Radar name="Hiệu suất" dataKey="A" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.5} />
+                                                    <ReTooltip contentStyle={{background: '#001529', border: '1px solid var(--accent)', color: 'white'}} />
                                                 </RadarChart>
                                             </ResponsiveContainer>
-                                        ) : <Empty description="Không có dữ liệu bản đồ" />}
+                                        ) : <Empty description="Chưa có dữ liệu Radar" style={{marginTop: 50}} />}
                                     </div>
                                 </div>
                             </Col>
 
-                            <Col span={12}>
-                                <div className="section-card">
-                                    <div className="section-title" style={{color: '#cf1322'}}><span>🔥</span> Điểm nghẽn Bưu cục (Quản trị Rủi ro)</div>
-                                    <Table 
-                                        dataSource={data.bottlenecks} 
-                                        columns={[
-                                            { title: 'BƯU CỤC (BCVH)', dataIndex: 'name', key: 'name' },
-                                            { title: 'TỒN LÂU NHẤT', dataIndex: 'max_aging', key: 'max_aging', render: (v) => <Tag color="orange">{v} ngày</Tag> },
-                                            { title: 'TỒN/SLA', dataIndex: 'backlog', key: 'backlog', render: (v, r) => <Tag color="red" style={{borderRadius: '10px'}}>{v}/{r.sla}</Tag> },
-                                            { title: 'HÀNH ĐỘNG', key: 'action', render: () => <Button type="link" size="small">Chi tiết</Button> }
-                                        ]} 
-                                        pagination={{pageSize: 5}}
-                                        size="small"
-                                    />
+                            {/* BOTTLENECKS */}
+                            <Col span={6}>
+                                <div className="executive-card">
+                                    <Title level={5} style={{color: 'white', marginBottom: 16}}>⚠️ Điểm nghẽn tồn đọng</Title>
+                                    <Table dataSource={bottlenecks || []} columns={[
+                                        { title: 'BƯU CỤC', dataIndex: 'name', key: 'name' },
+                                        { title: 'TỒN', dataIndex: 'backlog', key: 'backlog', align: 'right', render: (v) => <span style={{color: 'var(--accent)', fontWeight: 700}}>{v}</span> },
+                                        { title: 'MAX AGING', dataIndex: 'max_aging', key: 'max_aging', align: 'right', render: (v) => <span>{v}d</span> }
+                                    ]} pagination={false} size="small" locale={{ emptyText: <Empty description="Không có tồn đọng" /> }} />
                                 </div>
                             </Col>
 
-                            <Col span={12}>
-                                <div className="section-card">
-                                    <div className="section-title"><span>🔍</span> Danh sách VIP Lỗi SLA (>3 ngày)</div>
-                                    <Table 
-                                        dataSource={data.slaList} 
-                                        columns={[
-                                            { title: 'SỐ HIỆU', dataIndex: 'id', key: 'id' },
-                                            { title: 'AGING', dataIndex: 'aging', key: 'aging', render: (v) => <Tag color="error">{v} ngày</Tag> },
-                                            { title: 'TỈNH', dataIndex: 'province', key: 'province', render: (v) => <Tag color="blue">{v}</Tag> },
-                                            { title: 'BƯU CỤC', dataIndex: 'bcvh', key: 'bcvh' }
-                                        ]} 
-                                        pagination={{pageSize: 5}}
-                                        size="small"
-                                    />
+                            {/* ACTION CENTER */}
+                            <Col span={24}>
+                                <div className="executive-card">
+                                    <Title level={5} style={{color: 'white', marginBottom: 16}}>🛡️ Action Center (SLA Risk Management)</Title>
+                                    <Table dataSource={slaRisk || []} columns={[
+                                        { title: 'MÃ BƯU GỬI', dataIndex: 'tracking_id', key: 'tracking_id' },
+                                        { title: 'TỈNH PHÁT', dataIndex: 'province', key: 'province' },
+                                        { title: 'BƯU CỤC VẬN HÀNH', dataIndex: 'post_office_name', key: 'post_office_name' },
+                                        { title: 'TUỔI ĐƠN', dataIndex: 'aging', key: 'aging', render: (v) => <Tag color="error">{v} NGÀY</Tag> },
+                                        { title: 'HÀNH ĐỘNG', key: 'action', render: () => <Button size="small" ghost type="primary">Xử lý ngay</Button> }
+                                    ]} pagination={{pageSize: 5}} size="small" locale={{ emptyText: <Empty description="Chưa ghi nhận rủi ro SLA" /> }} />
                                 </div>
                             </Col>
                         </Row>
                     </div>
                 </Layout>
+                </ErrorBoundary>
             );
         };
 

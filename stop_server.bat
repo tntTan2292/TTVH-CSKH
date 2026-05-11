@@ -1,19 +1,13 @@
 @echo off
-title Stopping VNPost Hue VIP Dashboard
-echo Finding process on port 8088...
-
-:: Find PID on port 8088
-set "pid="
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8088 ^| findstr LISTENING') do (
-    set "pid=%%a"
+title VNPOST HUE DASHBOARD STOPPER
+echo Stopping Dashboard (8088) and API (8010)...
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8088') do (
+    echo Killing Frontend on PID %%a
+    taskkill /F /PID %%a
 )
-
-if defined pid (
-    echo Killing process %pid%...
-    taskkill /F /PID %pid%
-    echo Server stopped successfully.
-) else (
-    echo Server is not running on port 8088.
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8010') do (
+    echo Killing Backend on PID %%a
+    taskkill /F /PID %%a
 )
-
+echo All systems stopped.
 timeout /t 2
