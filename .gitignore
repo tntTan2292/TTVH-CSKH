@@ -1,0 +1,8 @@
+*.db
+*.xlsx
+temp_*
+upload_*
+error_log.txt
+__pycache__/
+.vscode/
+node_modules/

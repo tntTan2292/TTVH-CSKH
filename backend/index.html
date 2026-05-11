@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/antd/5.12.2/reset.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/antd/5.12.2/antd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/recharts/umd/Recharts.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #003a8c;
+            --accent: #fadb14;
+            --danger: #ff4d4f;
+            --bg: #f0f2f5;
+            --card-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        body { margin: 0; font-family: 'Outfit', sans-serif; background: var(--bg); overflow-x: hidden; }
+        
+        /* FIX: Thêm padding-top cho header để không bị chắn */
+        .header {
+            background: var(--primary);
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            border-bottom: 3px solid var(--accent);
+        }
+        .header h1 { margin: 0; font-size: 18px; color: white; display: flex; align-items: center; text-transform: uppercase; letter-spacing: 1px; }
+        
+        .main-container { padding: 24px; max-width: 1600px; margin: 0 auto; }
+        
+        .kpi-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: var(--card-shadow);
+            border-left: 5px solid var(--primary);
+            transition: transform 0.2s;
+        }
+        .kpi-card:hover { transform: translateY(-5px); }
+        .kpi-value { font-size: 32px; font-weight: 700; margin: 8px 0; color: #262626; }
+        .kpi-label { color: #8c8c8c; font-size: 12px; text-transform: uppercase; font-weight: 600; }
+        
+        .section-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--card-shadow);
+            margin-bottom: 24px;
+            height: 100%;
+        }
+        .section-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #434343;
+        }
+        
+        .status-tag { border-radius: 4px; padding: 2px 8px; font-weight: 600; font-size: 12px; }
+        .risk-high { background: #fff1f0; color: #cf1322; border: 1px solid #ffa39e; }
+        .risk-low { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
+
+        .ant-table-thead > tr > th { background: #fafafa !important; font-weight: 700 !important; }
+        .ant-progress-inner { background-color: #f5f5f5; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const { Layout, Row, Col, Card, Statistic, Table, Tag, Progress, Button, message, Modal, Space, Empty } = window.antd;
+        const { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer, Legend, PieChart, Pie, Cell, Tooltip } = window.Recharts;
+
+        const App = () => {
+            const [data, setData] = useState(null);
+            const [loading, setLoading] = useState(true);
+
+            const fetchData = async () => {
+                try {
+                    const res = await fetch('http://localhost:8088/stats');
+                    const json = await res.json();
+                    if (json.error) message.error(json.error);
+                    else setData(json);
+                } catch (err) {
+                    message.error("Không thể kết nối Server!");
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => { fetchData(); }, []);
+
+            const handleUpload = async () => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    setLoading(true);
+                    try {
+                        const res = await fetch('http://localhost:8088/upload', { method: 'POST', body: formData });
+                        const json = await res.json();
+                        message.success(json.message || "Đã nạp dữ liệu thành công!");
+                        fetchData();
+                    } catch (err) {
+                        message.error("Lỗi nạp file!");
+                    } finally {
+                        setLoading(false);
+                    }
+                };
+                input.click();
+            };
+
+            if (!data) return <div style={{padding: 50, textAlign: 'center'}}><Progress status="active" /></div>;
+
+            const provinceCols = [
+                { title: 'TỈNH PHÁT', dataIndex: 'province', key: 'province' },
+                { title: 'TỔNG ĐƠN', dataIndex: 'total', key: 'total', sorter: (a, b) => a.total - b.total },
+                { title: 'THÀNH CÔNG', dataIndex: 'success', key: 'success', render: (v) => <span style={{color: '#52c41a', fontWeight: 700}}>{v}</span> },
+                { title: 'HIỆU SUẤT', dataIndex: 'rate', key: 'rate', render: (v) => <Tag color={v > 80 ? 'green' : v > 50 ? 'orange' : 'red'}>{v}%</Tag> },
+                { title: 'CHƯA PHÁT', dataIndex: 'unsuccessful', key: 'unsuccessful', render: (v) => <span style={{color: '#1890ff'}}>{v} đơn</span> }
+            ];
+
+            return (
+                <Layout>
+                    <div className="header">
+                        <h1>
+                            <span style={{fontSize: 24, marginRight: 12}}>📮</span>
+                            VNPOST HUE <span style={{color: var(--accent), marginLeft: 8, fontSize: 12, opacity: 0.8}}>| EXECUTIVE COMMAND CENTER</span>
+                        </h1>
+                        <Space>
+                            <span style={{marginRight: 20, color: '#fadb14', fontWeight: 600}}>Khu vực: {data.customer.name}</span>
+                            <Button type="primary" icon={<span>📥</span>} onClick={handleUpload} style={{background: '#52c41a', borderColor: '#52c41a'}}>NẠP DỮ LIỆU</Button>
+                            <Button icon={<span>🔄</span>} onClick={fetchData} />
+                        </Space>
+                    </div>
+
+                    <div className="main-container">
+                        <Row gutter={[24, 24]}>
+                            <Col span={6}>
+                                <div className="kpi-card">
+                                    <div className="kpi-label">Tổng sản lượng</div>
+                                    <div className="kpi-value"><span style={{fontSize: 20}}>🌐</span> {data.kpis.total}</div>
+                                </div>
+                            </Col>
+                            <Col span={6}>
+                                <div className="kpi-card">
+                                    <div className="kpi-label">Đã phát thành công</div>
+                                    <div className="kpi-value" style={{color: '#52c41a'}}><span style={{fontSize: 20}}>✅</span> {data.kpis.success}</div>
+                                    <Progress percent={Math.round(data.kpis.success*100/data.kpis.total)} size="small" strokeColor="#52c41a" />
+                                </div>
+                            </Col>
+                            <Col span={6}>
+                                <div className="kpi-card">
+                                    <div className="kpi-label">Chưa phát được</div>
+                                    <div className="kpi-value" style={{color: '#faad14'}}><span style={{fontSize: 20}}>🕒</span> {data.kpis.pending}</div>
+                                </div>
+                            </Col>
+                            <Col span={6}>
+                                <div className="kpi-card" style={{borderColor: 'var(--danger)', background: '#fff1f0'}}>
+                                    <div className="kpi-label">Rủi ro SLA (>3 ngày)</div>
+                                    <div className="kpi-value" style={{color: 'var(--danger)'}}><span style={{fontSize: 20}}>🚨</span> {data.kpis.sla}</div>
+                                </div>
+                            </Col>
+
+                            <Col span={14}>
+                                <div className="section-card">
+                                    <div className="section-title"><span>🧭</span> Phân tích Hiệu suất theo Tỉnh phát</div>
+                                    <Table 
+                                        dataSource={data.provinceSummary} 
+                                        columns={provinceCols} 
+                                        pagination={{pageSize: 7}}
+                                        size="small"
+                                    />
+                                </div>
+                            </Col>
+
+                            <Col span={10}>
+                                <div className="section-card">
+                                    <div className="section-title"><span>🎯</span> Bản đồ Hiệu suất (%)</div>
+                                    <div style={{height: 350}}>
+                                        {data.radarData && data.radarData.length > 0 ? (
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <RadarChart cx="50%" cy="50%" outerRadius="70%" data={data.radarData}>
+                                                    <PolarGrid stroke="#f0f0f0" />
+                                                    <PolarAngleAxis dataKey="subject" tick={{fontSize: 10, fill: '#8c8c8c'}} />
+                                                    <Radar name="Hiệu suất (%)" dataKey="A" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.6} />
+                                                    <Tooltip />
+                                                    <Legend />
+                                                </RadarChart>
+                                            </ResponsiveContainer>
+                                        ) : <Empty description="Không có dữ liệu bản đồ" />}
+                                    </div>
+                                </div>
+                            </Col>
+
+                            <Col span={12}>
+                                <div className="section-card">
+                                    <div className="section-title" style={{color: '#cf1322'}}><span>🔥</span> Điểm nghẽn Bưu cục (Quản trị Rủi ro)</div>
+                                    <Table 
+                                        dataSource={data.bottlenecks} 
+                                        columns={[
+                                            { title: 'BƯU CỤC (BCVH)', dataIndex: 'name', key: 'name' },
+                                            { title: 'TỒN LÂU NHẤT', dataIndex: 'max_aging', key: 'max_aging', render: (v) => <Tag color="orange">{v} ngày</Tag> },
+                                            { title: 'TỒN/SLA', dataIndex: 'backlog', key: 'backlog', render: (v, r) => <Tag color="red" style={{borderRadius: '10px'}}>{v}/{r.sla}</Tag> },
+                                            { title: 'HÀNH ĐỘNG', key: 'action', render: () => <Button type="link" size="small">Chi tiết</Button> }
+                                        ]} 
+                                        pagination={{pageSize: 5}}
+                                        size="small"
+                                    />
+                                </div>
+                            </Col>
+
+                            <Col span={12}>
+                                <div className="section-card">
+                                    <div className="section-title"><span>🔍</span> Danh sách VIP Lỗi SLA (>3 ngày)</div>
+                                    <Table 
+                                        dataSource={data.slaList} 
+                                        columns={[
+                                            { title: 'SỐ HIỆU', dataIndex: 'id', key: 'id' },
+                                            { title: 'AGING', dataIndex: 'aging', key: 'aging', render: (v) => <Tag color="error">{v} ngày</Tag> },
+                                            { title: 'TỈNH', dataIndex: 'province', key: 'province', render: (v) => <Tag color="blue">{v}</Tag> },
+                                            { title: 'BƯU CỤC', dataIndex: 'bcvh', key: 'bcvh' }
+                                        ]} 
+                                        pagination={{pageSize: 5}}
+                                        size="small"
+                                    />
+                                </div>
+                            </Col>
+                        </Row>
+                    </div>
+                </Layout>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
