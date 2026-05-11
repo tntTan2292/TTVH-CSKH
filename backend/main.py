@@ -56,7 +56,7 @@ init_db()
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"--- [EXECUTIVE UPDATE] START IMPORT: {file.filename} ---")
+    log_terminal(f"--- [DEEP TRACE] START IMPORT: {file.filename} ---")
     session_id = None
     file_path = os.path.join(UPLOAD_DIR, f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
     try:
@@ -78,6 +78,9 @@ async def upload_excel(file: UploadFile = File(...)):
             df = pd.read_excel(xls, sheet_name=target_sheet, header=header_row_idx)
             df.columns = [clean_text(h) for h in df.columns]
 
+        # EVIDENCE: In ra các cột và 5 dòng Tỉnh đầu tiên
+        log_terminal(f"Detected Columns: {df.columns.tolist()}")
+        
         headers_lower = [h.lower() for h in df.columns]
         def find_best_col(target_keywords, exclude_keywords=[]):
             for i, h in enumerate(headers_lower):
@@ -94,8 +97,10 @@ async def upload_excel(file: UploadFile = File(...)):
             "address": find_best_col(["địa chỉ"], ["mã"])
         }
 
-        if any(mapping[k] is None for k in ["tracking_id", "result_final", "post_office"]):
-            raise Exception("Thiếu cột bắt buộc để định danh Logistics")
+        # EVIDENCE: Log mapping và dữ liệu Tỉnh thật
+        log_terminal(f"Semantic Mapping: {mapping}")
+        if mapping["province"] is not None:
+            log_terminal(f"Raw Province Sample: {df.iloc[:, mapping['province']].dropna().head(5).tolist()}")
 
         df = df.drop_duplicates(subset=[df.columns[mapping["tracking_id"]]], keep='last')
         customer_info = clean_text(df_raw_10.iloc[0, 0])
@@ -144,16 +149,37 @@ async def get_province_performance():
     conn = get_db_conn()
     cursor = conn.cursor()
     session = cursor.execute("SELECT session_id FROM import_sessions WHERE status='SUCCESS' ORDER BY session_id DESC LIMIT 1").fetchone()
-    if not session: return []
+    if not session: return {"labels": [], "datasets": []}
+    
     sid = session['session_id']
+    log_terminal(f"--- AGGREGATING PROVINCE FOR SID {sid} ---")
+    
+    # EVIDENCE: Kiểm tra số dòng có tỉnh trong DB
+    check = cursor.execute("SELECT COUNT(*) FROM orders WHERE session_id = ? AND province IS NOT NULL AND province != ''", (sid,)).fetchone()[0]
+    log_terminal(f"Orders with non-empty Province: {check}")
+
     rows = cursor.execute('''
         SELECT province, COUNT(*) as total, 
         SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success 
         FROM orders WHERE session_id = ? AND province != '' AND province IS NOT NULL
         GROUP BY province ORDER BY total DESC LIMIT 8
     ''', (sid,)).fetchall()
+    
+    labels = [r['province'] for r in rows]
+    rates = [round(r['success']*100/r['total']) if r['total']>0 else 0 for r in rows]
+    
+    log_terminal(f"Aggregation Results: Labels={labels}, Rates={rates}")
     conn.close()
-    return [{"province": r['province'], "total": r['total'], "success": r['success'], "rate": round(r['success']*100/r['total']) if r['total']>0 else 0} for r in rows]
+    
+    return {
+        "labels": labels,
+        "datasets": [
+            {
+                "label": "Tỷ lệ phát thành công (%)",
+                "data": rates
+            }
+        ]
+    }
 
 @app.get("/api/dashboard/stats")
 async def get_stats():
