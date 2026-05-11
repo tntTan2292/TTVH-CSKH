@@ -28,9 +28,6 @@
         .card-inner { padding: 20px; }
         .kpi-value { font-size: 36px; font-weight: 700; color: var(--primary); line-height: 1.1; }
         .kpi-label { font-size: 11px; text-transform: uppercase; color: var(--text-sub); letter-spacing: 1px; margin-bottom: 8px; font-weight: 600; }
-        
-        /* PREMIUM TABLE STYLE */
-        .ant-table-wrapper { border-radius: 8px; overflow: hidden; }
         .ant-table-thead > tr > th { 
             background: var(--primary-dark) !important; 
             color: #ffffff !important; 
@@ -42,12 +39,9 @@
         }
         .ant-table-tbody > tr:hover > td { background: #f1f5f9 !important; }
         .ant-table-tbody > tr > td { padding: 12px 16px !important; border-bottom: 1px solid #f1f5f9 !important; }
-        
-        /* SECTION TITLE STYLE */
         .section-header { display: flex; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border); background: #fafafa; }
         .section-indicator { width: 4px; height: 18px; background: var(--primary); border-radius: 2px; margin-right: 12px; }
         .section-title { font-size: 13px; font-weight: 700; color: var(--text-main); text-transform: uppercase; margin: 0; letter-spacing: 0.5px; }
-
         .nav-brand { font-size: 18px; font-weight: 800; color: var(--primary); letter-spacing: -0.5px; }
         .nav-brand span { color: #f97316; }
     </style>
@@ -73,16 +67,16 @@
             const [slaRisk, setSlaRisk] = useState([]);
             const [provinceChartData, setProvinceChartData] = useState([]);
             const [loading, setLoading] = useState(true);
-            const API_BASE = "http://localhost:8010/api/dashboard";
+            const API_BASE = "http://localhost:8010";
 
             const fetchAll = async () => {
                 setLoading(true);
                 try {
                     const [s, b, r, p] = await Promise.all([
-                        fetch(`${API_BASE}/stats`).then(res => res.json()),
-                        fetch(`${API_BASE}/bcvh-summary`).then(res => res.json()),
-                        fetch(`${API_BASE}/sla-risk`).then(res => res.json()),
-                        fetch(`${API_BASE}/province-performance`).then(res => res.json())
+                        fetch(`${API_BASE}/api/dashboard/stats`).then(res => res.json()),
+                        fetch(`${API_BASE}/api/dashboard/bcvh-summary`).then(res => res.json()),
+                        fetch(`${API_BASE}/api/dashboard/sla-risk`).then(res => res.json()),
+                        fetch(`${API_BASE}/api/dashboard/province-performance`).then(res => res.json())
                     ]);
                     setStats(s && !s.error ? s : null);
                     setBcvhData(Array.isArray(b) ? b : []);
@@ -94,9 +88,36 @@
 
             useEffect(() => { fetchAll(); }, []);
 
+            const handleUpload = async () => {
+                const input = document.createElement('input');
+                input.type = 'file'; input.accept = '.xlsx';
+                input.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const formData = new FormData(); 
+                    formData.append('file', file);
+                    const hide = message.loading('Đang xử lý nghiệp vụ SLA V2.3...', 0);
+                    try {
+                        const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: formData });
+                        if (res.ok) { message.success("Snapshot Ready!"); fetchAll(); }
+                        else { 
+                            const j = await res.json(); 
+                            Modal.error({ title: 'Import Failure', content: j.detail || 'Lỗi cấu trúc Excel' }); 
+                        }
+                    } catch (err) { message.error("Lỗi mạng khi Import"); }
+                    finally { hide(); }
+                };
+                input.click();
+            };
+
             if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#f8fafc', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#003a8c" /><p style={{marginTop: 16, color: '#64748b'}}>Đang khởi động COMMAND CENTER...</p></div>;
 
-            if (!stats) return <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống Điều hành" extra={<Button type="primary" onClick={() => window.location.reload()}>LOAD DATA</Button>} /></div>;
+            if (!stats) return (
+                <Layout style={{minHeight: '100vh', background: '#f8fafc'}}>
+                    <div className="header"><div className="nav-brand">VNPOST HUẾ <span>D.O.C</span></div></div>
+                    <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống Điều hành" subTitle="Sẵn sàng xử lý nghiệp vụ SLA mới." extra={<Button type="primary" size="large" onClick={handleUpload} style={{background: '#003a8c'}}>IMPORT DỮ LIỆU</Button>} /></div>
+                </Layout>
+            );
 
             const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip: ReTooltip, Cell } = window.Recharts || {};
 
@@ -105,7 +126,7 @@
                     <div className="header">
                         <div className="nav-brand">VNPOST HUẾ <span>D.O.C</span></div>
                         <Space>
-                            <Button type="primary" onClick={() => window.location.reload()} style={{background: '#003a8c', fontWeight: 600}}>NHẬP DỮ LIỆU MỚI</Button>
+                            <Button type="primary" onClick={handleUpload} style={{background: '#003a8c', fontWeight: 600}}>NHẬP DỮ LIỆU MỚI</Button>
                             <Button icon={<span>🔄</span>} onClick={fetchAll} />
                         </Space>
                     </div>
@@ -116,7 +137,7 @@
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #003a8c'}}><div className="card-inner"><div className="kpi-label">Tổng sản lượng VIP</div><div className="kpi-value">{(stats?.kpis?.total ?? 0).toLocaleString()}</div></div></div></Col>
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #059669'}}><div className="card-inner"><div className="kpi-label">Phát thành công</div><div className="kpi-value" style={{color: '#059669'}}>{(stats?.kpis?.success ?? 0).toLocaleString()}</div></div></div></Col>
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #f59e0b'}}><div className="card-inner"><div className="kpi-label">Đang tồn đọng</div><div className="kpi-value" style={{color: '#f59e0b'}}>{(stats?.kpis?.pending ?? 0).toLocaleString()}</div></div></div></Col>
-                            <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #ef4444'}}><div className="card-inner"><div className="kpi-label">Cảnh báo SLA</div><div className="kpi-value" style={{color: '#ef4444'}}>{(stats?.kpis?.sla ?? 0).toLocaleString()}</div></div></div></Col>
+                            <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #ef4444'}}><div className="card-inner"><div className="kpi-label">Vi phạm SLA (>3 ngày)</div><div className="kpi-value" style={{color: '#ef4444'}}>{(stats?.kpis?.sla ?? 0).toLocaleString()}</div></div></div></Col>
 
                             <Col span={14}>
                                 <div className="executive-card">
@@ -161,14 +182,13 @@
 
                             <Col span={24}>
                                 <div className="executive-card">
-                                    <div className="section-header" style={{background: '#fff1f0'}}><div className="section-indicator" style={{background: '#ef4444'}}></div><div className="section-title" style={{color: '#cf1322'}}>Action Center: Danh sách đơn hàng rủi ro cao (SLA Violation)</div></div>
+                                    <div className="section-header" style={{background: '#fff1f0'}}><div className="section-indicator" style={{background: '#ef4444'}}></div><div className="section-title" style={{color: '#cf1322'}}>Action Center: Danh sách đơn hàng vi phạm SLA thực tế</div></div>
                                     <div className="card-inner">
                                         <Table dataSource={slaRisk} columns={[
                                             { title: 'MÃ BƯU GỬI', dataIndex: 'tracking_id', render: t => <Text strong style={{color: '#003a8c'}}>{t}</Text> },
                                             { title: 'TỈNH PHÁT', dataIndex: 'province' },
                                             { title: 'BƯU CỤC VẬN HÀNH', dataIndex: 'post_office_name' },
-                                            { title: 'THỜI GIAN TỒN', dataIndex: 'aging', render: v => <Tag color="error" style={{fontWeight: 700}}>{v} NGÀY</Tag> },
-                                            { title: 'THAO TÁC', render: () => <Button size="small" type="link">Xử lý ngay</Button> }
+                                            { title: 'THỜI GIAN TỒN', dataIndex: 'aging', render: v => <Tag color="error" style={{fontWeight: 700}}>{v} NGÀY</Tag> }
                                         ]} pagination={{pageSize: 5}} size="small" />
                                     </div>
                                 </div>
