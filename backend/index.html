@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V2.3</title>
+    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V2.4</title>
     <!-- LIBRARIES -->
     <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
@@ -26,23 +26,21 @@
         .main-container { padding: 24px; max-width: 1920px; margin: 0 auto; }
         .executive-card { background: var(--card-bg); border-radius: 12px; padding: 0; border: 1px solid var(--border); height: 100%; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05); overflow: hidden; }
         .card-inner { padding: 20px; }
-        .kpi-value { font-size: 36px; font-weight: 700; color: var(--primary); line-height: 1.1; }
+        .kpi-value { font-size: 34px; font-weight: 700; color: var(--primary); line-height: 1.1; }
         .kpi-label { font-size: 11px; text-transform: uppercase; color: var(--text-sub); letter-spacing: 1px; margin-bottom: 8px; font-weight: 600; }
         .ant-table-thead > tr > th { 
             background: var(--primary-dark) !important; 
             color: #ffffff !important; 
-            font-size: 11px !important; 
+            font-size: 10px !important; 
             font-weight: 600 !important; 
             text-transform: uppercase;
-            padding: 14px 16px !important;
-            border-bottom: none !important;
+            padding: 12px 16px !important;
         }
-        .ant-table-tbody > tr:hover > td { background: #f1f5f9 !important; }
-        .ant-table-tbody > tr > td { padding: 12px 16px !important; border-bottom: 1px solid #f1f5f9 !important; }
-        .section-header { display: flex; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border); background: #fafafa; }
+        .ant-table-tbody > tr > td { padding: 10px 16px !important; font-size: 12px; }
+        .section-header { display: flex; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border); background: #fafafa; }
         .section-indicator { width: 4px; height: 18px; background: var(--primary); border-radius: 2px; margin-right: 12px; }
-        .section-title { font-size: 13px; font-weight: 700; color: var(--text-main); text-transform: uppercase; margin: 0; letter-spacing: 0.5px; }
-        .nav-brand { font-size: 18px; font-weight: 800; color: var(--primary); letter-spacing: -0.5px; }
+        .section-title { font-size: 12px; font-weight: 700; color: var(--text-main); text-transform: uppercase; margin: 0; }
+        .nav-brand { font-size: 18px; font-weight: 800; color: var(--primary); }
         .nav-brand span { color: #f97316; }
     </style>
 </head>
@@ -65,7 +63,7 @@
             const [stats, setStats] = useState(null);
             const [bcvhData, setBcvhData] = useState([]);
             const [slaRisk, setSlaRisk] = useState([]);
-            const [provinceChartData, setProvinceChartData] = useState([]);
+            const [provinceData, setProvinceData] = useState([]);
             const [loading, setLoading] = useState(true);
             const API_BASE = "http://localhost:8010";
 
@@ -81,54 +79,22 @@
                     setStats(s && !s.error ? s : null);
                     setBcvhData(Array.isArray(b) ? b : []);
                     setSlaRisk(Array.isArray(r) ? r : []);
-                    setProvinceChartData(Array.isArray(p) ? p : []);
+                    setProvinceData(Array.isArray(p) ? p : []);
                 } catch (err) { message.error("API Error 8010"); } 
                 finally { setLoading(false); }
             };
 
             useEffect(() => { fetchAll(); }, []);
 
-            const handleUpload = async () => {
-                const input = document.createElement('input');
-                input.type = 'file'; input.accept = '.xlsx';
-                input.onchange = async (e) => {
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    const formData = new FormData(); 
-                    formData.append('file', file);
-                    const hide = message.loading('Đang xử lý nghiệp vụ SLA V2.3...', 0);
-                    try {
-                        const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: formData });
-                        if (res.ok) { message.success("Snapshot Ready!"); fetchAll(); }
-                        else { 
-                            const j = await res.json(); 
-                            Modal.error({ title: 'Import Failure', content: j.detail || 'Lỗi cấu trúc Excel' }); 
-                        }
-                    } catch (err) { message.error("Lỗi mạng khi Import"); }
-                    finally { hide(); }
-                };
-                input.click();
-            };
-
             if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#f8fafc', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#003a8c" /><p style={{marginTop: 16, color: '#64748b'}}>Đang khởi động COMMAND CENTER...</p></div>;
 
-            if (!stats) return (
-                <Layout style={{minHeight: '100vh', background: '#f8fafc'}}>
-                    <div className="header"><div className="nav-brand">VNPOST HUẾ <span>D.O.C</span></div></div>
-                    <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống Điều hành" subTitle="Sẵn sàng xử lý nghiệp vụ SLA mới." extra={<Button type="primary" size="large" onClick={handleUpload} style={{background: '#003a8c'}}>IMPORT DỮ LIỆU</Button>} /></div>
-                </Layout>
-            );
-
-            const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip: ReTooltip, Cell } = window.Recharts || {};
+            if (!stats) return <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống Điều hành V2.4" extra={<Button type="primary" onClick={() => window.location.reload()}>LOAD DATA</Button>} /></div>;
 
             return (
                 <Layout style={{minHeight: '100vh', background: '#f8fafc'}}>
                     <div className="header">
                         <div className="nav-brand">VNPOST HUẾ <span>D.O.C</span></div>
-                        <Space>
-                            <Button type="primary" onClick={handleUpload} style={{background: '#003a8c', fontWeight: 600}}>NHẬP DỮ LIỆU MỚI</Button>
-                            <Button icon={<span>🔄</span>} onClick={fetchAll} />
-                        </Space>
+                        <Space><Button icon={<span>🔄</span>} onClick={fetchAll} /> <Button type="primary" onClick={() => window.location.reload()} style={{background: '#003a8c'}}>IMPORT MỚI</Button></Space>
                     </div>
 
                     <div className="main-container">
@@ -139,19 +105,44 @@
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #f59e0b'}}><div className="card-inner"><div className="kpi-label">Đang tồn đọng</div><div className="kpi-value" style={{color: '#f59e0b'}}>{(stats?.kpis?.pending ?? 0).toLocaleString()}</div></div></div></Col>
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #ef4444'}}><div className="card-inner"><div className="kpi-label">Vi phạm SLA (>3 ngày)</div><div className="kpi-value" style={{color: '#ef4444'}}>{(stats?.kpis?.sla ?? 0).toLocaleString()}</div></div></div></Col>
 
+                            <Col span={24}>
+                                <div className="executive-card">
+                                    <div className="section-header"><div className="section-indicator"></div><div className="section-title">Ma trận Hiệu suất Tỉnh phát (Multi-Metric Analysis)</div></div>
+                                    <div className="card-inner">
+                                        <Table dataSource={provinceData} columns={[
+                                            { title: 'TỈNH PHÁT', dataIndex: 'name', render: t => <Text strong style={{color: '#003a8c'}}>{t}</Text> },
+                                            { title: 'SỐ BƯU GỬI PHÁT', dataIndex: 'total', align: 'right', render: v => <Text strong>{v.toLocaleString()}</Text> },
+                                            { title: 'TỶ LỆ THÀNH CÔNG', dataIndex: 'success_rate', render: (v, r) => (
+                                                <div style={{width: 180}}>
+                                                    <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 4}}>
+                                                        <Text size="small" style={{fontSize: 10}}>{r.success} đơn</Text>
+                                                        <Text strong style={{fontSize: 10, color: getPerformanceColor(v)}}>{v}%</Text>
+                                                    </div>
+                                                    <Progress percent={v} size="small" showInfo={false} strokeColor={getPerformanceColor(v)} />
+                                                </div>
+                                            )},
+                                            { title: 'VI PHẠM SLA', dataIndex: 'sla', align: 'right', render: v => <Text style={{color: v > 0 ? '#ef4444' : '#64748b', fontWeight: 600}}>{v}</Text> },
+                                            { title: 'TỶ LỆ QUÁ SLA', dataIndex: 'sla_rate', render: v => (
+                                                <div style={{width: 180}}>
+                                                    <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 4}}>
+                                                        <Text strong style={{fontSize: 10, color: v > 10 ? '#ef4444' : '#64748b'}}>{v}% Risk</Text>
+                                                    </div>
+                                                    <Progress percent={v} size="small" showInfo={false} strokeColor="#ef4444" status={v > 10 ? 'exception' : 'normal'} />
+                                                </div>
+                                            )}
+                                        ]} pagination={false} size="small" />
+                                    </div>
+                                </div>
+                            </Col>
+
                             <Col span={14}>
                                 <div className="executive-card">
                                     <div className="section-header"><div className="section-indicator"></div><div className="section-title">Phân tích hiệu suất theo Bưu cục</div></div>
                                     <div className="card-inner">
                                         <Table dataSource={bcvhData} columns={[
-                                            { title: 'BƯU CỤC VẬN HÀNH', dataIndex: 'name', render: (t, r) => (
-                                                <Space>
-                                                    <div style={{width: 3, height: 12, background: getPerformanceColor(provinceChartData.find(p => p.name === r.province)?.rate || 0)}} />
-                                                    <Text strong>{t}</Text>
-                                                </Space>
-                                            )},
-                                            { title: 'TỔNG ĐƠN', dataIndex: 'total', align: 'right' },
-                                            { title: 'THÀNH CÔNG', dataIndex: 'success', align: 'right', render: v => <Text style={{color: '#059669', fontWeight: 600}}>{v}</Text> },
+                                            { title: 'BƯU CỤC VẬN HÀNH', dataIndex: 'name', render: t => <Text strong>{t}</Text> },
+                                            { title: 'TỈNH PHÁT', dataIndex: 'province', render: v => <Tag style={{fontSize: 10}}>{v}</Tag> },
+                                            { title: 'SẢN LƯỢNG', dataIndex: 'total', align: 'right' },
                                             { title: 'TỶ LỆ (%)', dataIndex: 'rate', align: 'center', render: v => <Tag color={getPerformanceColor(v)}>{v}%</Tag> }
                                         ]} pagination={{pageSize: 8}} size="small" />
                                     </div>
@@ -160,36 +151,13 @@
 
                             <Col span={10}>
                                 <div className="executive-card">
-                                    <div className="section-header"><div className="section-indicator"></div><div className="section-title">Xếp hạng hiệu suất Tỉnh phát</div></div>
-                                    <div className="card-inner">
-                                        <div style={{height: 330}}>
-                                            {ResponsiveContainer && provinceChartData.length > 0 ? (
-                                                <ResponsiveContainer width="100%" height="100%">
-                                                    <BarChart data={provinceChartData} layout="vertical" margin={{ left: 80, right: 30 }}>
-                                                        <XAxis type="number" hide />
-                                                        <YAxis dataKey="name" type="category" tick={{fill: '#64748b', fontSize: 10}} width={120} />
-                                                        <ReTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'}} />
-                                                        <Bar dataKey="rate" radius={[0, 4, 4, 0]} isAnimationActive={false}>
-                                                            {provinceChartData.map((e, i) => <Cell key={i} fill={getPerformanceColor(e.rate)} />)}
-                                                        </Bar>
-                                                    </BarChart>
-                                                </ResponsiveContainer>
-                                            ) : <div style={{padding: 50, textAlign: 'center'}}><Empty description="Chưa có dữ liệu" /></div>}
-                                        </div>
-                                    </div>
-                                </div>
-                            </Col>
-
-                            <Col span={24}>
-                                <div className="executive-card">
-                                    <div className="section-header" style={{background: '#fff1f0'}}><div className="section-indicator" style={{background: '#ef4444'}}></div><div className="section-title" style={{color: '#cf1322'}}>Action Center: Danh sách đơn hàng vi phạm SLA thực tế</div></div>
+                                    <div className="section-header" style={{background: '#fff1f0'}}><div className="section-indicator" style={{background: '#ef4444'}}></div><div className="section-title" style={{color: '#cf1322'}}>Danh sách rủi ro cao (SLA >3 ngày)</div></div>
                                     <div className="card-inner">
                                         <Table dataSource={slaRisk} columns={[
                                             { title: 'MÃ BƯU GỬI', dataIndex: 'tracking_id', render: t => <Text strong style={{color: '#003a8c'}}>{t}</Text> },
-                                            { title: 'TỈNH PHÁT', dataIndex: 'province' },
-                                            { title: 'BƯU CỤC VẬN HÀNH', dataIndex: 'post_office_name' },
-                                            { title: 'THỜI GIAN TỒN', dataIndex: 'aging', render: v => <Tag color="error" style={{fontWeight: 700}}>{v} NGÀY</Tag> }
-                                        ]} pagination={{pageSize: 5}} size="small" />
+                                            { title: 'BƯU CỤC', dataIndex: 'post_office_name' },
+                                            { title: 'TUỔI ĐƠN', dataIndex: 'aging', render: v => <Tag color="error" style={{fontWeight: 700}}>{v} NGÀY</Tag> }
+                                        ]} pagination={{pageSize: 8}} size="small" />
                                     </div>
                                 </div>
                             </Col>

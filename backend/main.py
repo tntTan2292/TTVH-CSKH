@@ -43,19 +43,12 @@ def get_db_conn():
 def init_db():
     conn = get_db_conn()
     cursor = conn.cursor()
-    # PHÁ BỎ TABLE CŨ ĐỂ CẬP NHẬT SCHEMA 12 CỘT
-    # cursor.execute("DROP TABLE IF EXISTS orders") # Chỉ chạy 1 lần nếu cần, ở đây ta sẽ dùng logic an toàn hơn
-    
     cursor.execute('''CREATE TABLE IF NOT EXISTS import_sessions (session_id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT, imported_at DATETIME, total_rows INTEGER, unique_ids INTEGER, success_count INTEGER, status TEXT)''')
     cursor.execute('CREATE TABLE IF NOT EXISTS customers (customer_id TEXT PRIMARY KEY, customer_name TEXT, last_import DATETIME)')
-    
-    # KIỂM TRA VÀ CẬP NHẬT CỘT NẾU THIẾU (MIGRATION)
     try:
         cursor.execute("SELECT result_first FROM orders LIMIT 1")
     except:
-        log_terminal("SCHEMA OUTDATED: Recreating orders table...")
         cursor.execute("DROP TABLE IF EXISTS orders")
-        
     cursor.execute('''CREATE TABLE IF NOT EXISTS orders (
         tracking_id TEXT, customer_id TEXT, recipient_address TEXT, post_office_name TEXT, province TEXT, 
         acceptance_date TEXT, result_first TEXT, result_final TEXT, status TEXT, aging INTEGER, is_sla_violation BOOLEAN, 
@@ -67,7 +60,7 @@ init_db()
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"--- [SCHEMA SYNC] START: {file.filename} ---")
+    log_terminal(f"--- [MULTI-METRIC SYNC] START: {file.filename} ---")
     session_id = None
     file_path = os.path.join(UPLOAD_DIR, f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
     try:
@@ -104,10 +97,6 @@ async def upload_excel(file: UploadFile = File(...)):
         }
 
         df = df.drop_duplicates(subset=[df.columns[mapping["tracking_id"]]], keep='last')
-        customer_info = clean_text(df_raw_10.iloc[0, 0])
-        customer_id = customer_info.split('-')[0].strip() if '-' in customer_info else "UNKNOWN"
-        customer_name = customer_info.split('-')[1].strip() if '-' in customer_info else customer_info
-
         conn = get_db_conn()
         cursor = conn.cursor()
         try:
@@ -116,41 +105,23 @@ async def upload_excel(file: UploadFile = File(...)):
             session_id = cursor.lastrowid
             processed_orders = []
             success_count = 0
-            sla_count = 0
             now = datetime.now()
-            
             for _, row in df.iterrows():
                 tid = clean_text(row.iloc[mapping["tracking_id"]])
                 if not tid: continue
-                
                 res_final = clean_text(row.iloc[mapping["result_final"]]).lower() if mapping["result_final"] is not None else ""
                 is_success = "đã phát thành công" in res_final
                 if is_success: success_count += 1
-                
                 res_first = clean_text(row.iloc[mapping["result_first"]]).lower() if mapping["result_first"] is not None else ""
                 aging = 0
                 try:
                     acc_val = row.iloc[mapping["acceptance_date"]]
                     if not pd.isna(acc_val): aging = (now - pd.to_datetime(acc_val)).days
                 except: pass
-                
                 is_sla_violation = (int(aging) > 3) and ("chưa có tt phát" in res_first)
-                if is_sla_violation: sla_count += 1
-                
-                processed_orders.append((
-                    tid, customer_id, 
-                    clean_text(row.iloc[mapping["address"]]) if mapping["address"] is not None else "", 
-                    clean_text(row.iloc[mapping["post_office"]]), 
-                    clean_text(row.iloc[mapping["province"]]) if mapping["province"] is not None else "", 
-                    str(row.iloc[mapping["acceptance_date"]]),
-                    res_first, res_final,
-                    'Thành công' if is_success else 'Chưa thành công', 
-                    max(0, int(aging)), is_sla_violation, session_id
-                ))
+                processed_orders.append((tid, "UNKNOWN", clean_text(row.iloc[mapping["address"]]) if mapping["address"] is not None else "", clean_text(row.iloc[mapping["post_office"]]), clean_text(row.iloc[mapping["province"]]) if mapping["province"] is not None else "", str(row.iloc[mapping["acceptance_date"]]), res_first, res_final, 'Thành công' if is_success else 'Chưa thành công', max(0, int(aging)), is_sla_violation, session_id))
 
-            log_terminal(f"DB SYNC -> SUCCESS: {success_count}, SLA: {sla_count}, TOTAL: {len(df)}")
-            cursor.execute('UPDATE import_sessions SET unique_ids = ?, success_count = ?, status = ? WHERE session_id = ?', (len(processed_orders), success_count, "SUCCESS", session_id))
-            cursor.execute("INSERT OR REPLACE INTO customers (customer_id, customer_name, last_import) VALUES (?, ?, ?)", (customer_id, customer_name, datetime.now().isoformat()))
+            cursor.execute('UPDATE import_sessions SET success_count = ?, status = ? WHERE session_id = ?', (success_count, "SUCCESS", session_id))
             cursor.executemany('INSERT OR REPLACE INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', processed_orders)
             cursor.execute("COMMIT")
             return {"message": "Success", "session_id": session_id}
@@ -173,12 +144,20 @@ async def get_province_performance():
     sid = session['session_id']
     rows = cursor.execute('''
         SELECT province, COUNT(*) as total, 
-        SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success 
+        SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success,
+        SUM(CASE WHEN is_sla_violation = 1 THEN 1 ELSE 0 END) as sla
         FROM orders WHERE session_id = ? AND province != '' AND province IS NOT NULL
-        GROUP BY province ORDER BY (success*1.0/total) DESC LIMIT 10
+        GROUP BY province ORDER BY total DESC LIMIT 15
     ''', (sid,)).fetchall()
     conn.close()
-    return [{"name": r['province'], "rate": round(r['success']*100/r['total']) if r['total']>0 else 0} for r in rows]
+    return [{
+        "name": r['province'], 
+        "total": r['total'],
+        "success": r['success'],
+        "sla": r['sla'],
+        "success_rate": round(r['success']*100/r['total']) if r['total']>0 else 0,
+        "sla_rate": round(r['sla']*100/r['total']) if r['total']>0 else 0
+    } for r in rows]
 
 @app.get("/api/dashboard/stats")
 async def get_stats():
