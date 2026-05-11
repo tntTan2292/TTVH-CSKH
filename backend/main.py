@@ -56,7 +56,7 @@ init_db()
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"--- [FORENSIC DEBUG] START IMPORT: {file.filename} ---")
+    log_terminal(f"--- [DEEP DATA TRACE] START IMPORT: {file.filename} ---")
     session_id = None
     file_path = os.path.join(UPLOAD_DIR, f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
     try:
@@ -66,55 +66,64 @@ async def upload_excel(file: UploadFile = File(...)):
         
         with pd.ExcelFile(file_path, engine='openpyxl') as xls:
             target_sheet = 'DanhSach' if 'DanhSach' in xls.sheet_names else xls.sheet_names[0]
-            # EVIDENCE: Đọc 10 dòng thô để xác định Header
-            df_raw_10 = pd.read_excel(xls, sheet_name=target_sheet, header=None, nrows=10)
-            log_terminal(f"RAW FIRST 10 ROWS:\n{df_raw_10.to_dict(orient='records')}")
+            df_raw_test = pd.read_excel(xls, sheet_name=target_sheet, header=None, nrows=10)
             
+            # 1. DETECT HEADER ROW
             header_row_idx = 1 
-            for i, row in df_raw_10.iterrows():
+            for i, row in df_raw_test.iterrows():
                 row_str = " ".join([clean_text(val).lower() for val in row if not pd.isna(val)])
                 if "số hiệu" in row_str or "mã bưu gửi" in row_str:
                     header_row_idx = i
-                    log_terminal(f"DETECTED HEADER AT ROW: {i+1}")
+                    log_terminal(f"HEADER DETECTED AT ROW: {i+1}")
                     break
             
             df = pd.read_excel(xls, sheet_name=target_sheet, header=header_row_idx)
-            log_terminal(f"DETECTED COLUMNS: {df.columns.tolist()}")
+            
+            # 2. EVIDENCE: ALL COLUMNS
+            cols = df.columns.tolist()
+            log_terminal(f"EVIDENCE - ALL COLUMNS: {cols}")
+            log_terminal(f"EVIDENCE - DATA HEAD(3):\n{df.head(3).to_dict(orient='records')}")
+            
             df.columns = [clean_text(h) for h in df.columns]
 
-        # SEMANTIC MAPPING LOGIC
-        mapping = {}
-        headers_lower = [h.lower() for h in df.columns]
-        
-        # Helper để tìm cột tốt nhất
-        def find_best_col(target_keywords, exclude_keywords=[]):
-            # Ưu tiên khớp chính xác hoặc có chữ "Tên"
-            for i, h in enumerate(headers_lower):
-                if any(tk in h for tk in target_keywords):
-                    if not any(ek in h for ek in exclude_keywords):
-                        return i
-            # Nếu không tìm được cột "sạch", lấy cột đầu tiên chứa từ khóa
-            for i, h in enumerate(headers_lower):
-                if any(tk in h for tk in target_keywords):
-                    return i
+        # 3. EXPLICIT SEMANTIC MAPPING
+        def get_best_column(targets, excludes=[]):
+            headers = [h.lower() for h in df.columns]
+            # Priority 1: Exact match (clean)
+            for i, h in enumerate(headers):
+                if any(t == h for t in targets): return i
+            # Priority 2: Contains target and NOT in excludes
+            for i, h in enumerate(headers):
+                if any(t in h for t in targets):
+                    if not any(e in h for e in excludes): return i
+            # Priority 3: Just contains target
+            for i, h in enumerate(headers):
+                if any(t in h for t in targets): return i
             return None
 
-        # Định nghĩa các Alias cụ thể
-        mapping["tracking_id"] = find_best_col(["số hiệu", "mã bưu gửi"])
-        mapping["result_final"] = find_best_col(["kết quả phát", "trạng thái phát", "kết quả cuối cùng"])
-        mapping["province"] = find_best_col(["tỉnh phát", "tỉnh"], ["mã tỉnh"])
-        mapping["post_office"] = find_best_col(["tên bcvh", "bcvh", "bưu cục vận hành"], ["mã bcvh", "mã bc"])
-        mapping["acceptance_date"] = find_best_col(["ngày chấp nhận", "ngày gửi"])
-        mapping["address"] = find_best_col(["địa chỉ"], ["mã"])
+        mapping = {
+            "tracking_id": get_best_column(["số hiệu", "mã bưu gửi"]),
+            "result_final": get_best_column(["kết quả phát", "trạng thái phát", "kết quả cuối cùng"]),
+            "province": get_best_column(["tỉnh phát", "tỉnh"], ["mã"]),
+            "post_office": get_best_column(["tên bcvh", "bưu cục vận hành", "bcvh", "bưu cục"], ["mã"]),
+            "acceptance_date": get_best_column(["ngày chấp nhận", "ngày gửi"]),
+            "address": get_best_column(["địa chỉ"], ["mã"])
+        }
 
-        log_terminal(f"FINAL SEMANTIC MAPPING: {mapping}")
+        log_terminal(f"MAPPING RESULTS: {mapping}")
         
-        for k, v in mapping.items():
-            if v is None and k in ["tracking_id", "result_final", "post_office"]:
-                raise Exception(f"Không thể xác định cột: {k}")
+        # 4. VERIFY SAMPLE VALUES
+        for key, idx in mapping.items():
+            if idx is not None:
+                sample_vals = df.iloc[:, idx].dropna().head(5).tolist()
+                log_terminal(f"SAMPLE VALS [{key}]: {sample_vals}")
+
+        # Validation
+        for k in ["tracking_id", "result_final", "post_office"]:
+            if mapping[k] is None: raise Exception(f"Missing Required Column: {k}")
 
         df = df.drop_duplicates(subset=[df.columns[mapping["tracking_id"]]], keep='last')
-        customer_info = clean_text(df_raw_10.iloc[0, 0])
+        customer_info = clean_text(df_raw_test.iloc[0, 0])
         customer_id = customer_info.split('-')[0].strip() if '-' in customer_info else "UNKNOWN"
         customer_name = customer_info.split('-')[1].strip() if '-' in customer_info else customer_info
 
@@ -134,7 +143,6 @@ async def upload_excel(file: UploadFile = File(...)):
                 if not tid: continue
                 
                 res_val = clean_text(row.iloc[mapping["result_final"]]).lower()
-                # Kiểm tra kỹ từ khóa thành công
                 is_success = any(k in res_val for k in CONFIG["SUCCESS_KEYWORDS"]) and not any(k in res_val for k in CONFIG["FAIL_KEYWORDS"])
                 if is_success: success_count += 1
                 
@@ -161,14 +169,14 @@ async def upload_excel(file: UploadFile = File(...)):
             cursor.executemany('INSERT OR REPLACE INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?)', processed_orders)
             cursor.execute("COMMIT")
             
-            log_terminal(f"IMPORT COMPLETE: Session {session_id}, Success Count = {success_count} (Goal: 256)")
+            log_terminal(f"FINAL RESULT: Session {session_id}, Success={success_count} (Expected: 256), SLA={len(processed_orders)-success_count if (len(processed_orders)-success_count) == 111 else 'ERROR'}")
             return {"message": "Success", "session_id": session_id}
         except Exception as e:
             cursor.execute("ROLLBACK")
             raise e
         finally: conn.close()
     except Exception as e:
-        log_terminal(f"CRITICAL ERR: {str(e)}")
+        log_terminal(f"CRITICAL ERROR: {str(e)}")
         return JSONResponse(status_code=500, content={"detail": str(e)})
     finally:
         if os.path.exists(file_path): os.remove(file_path)
