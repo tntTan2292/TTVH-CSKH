@@ -3,33 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V2.1</title>
-    <!-- CORE LIBRARIES -->
+    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V2.2</title>
+    <!-- LIBRARIES -->
     <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/prop-types@15.8.1/prop-types.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/recharts@2.10.3/umd/Recharts.js"></script>
-    <!-- UI LIBRARIES -->
     <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/antd@5.12.2/dist/antd.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antd@5.12.2/dist/reset.css">
     <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.5/babel.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root { --primary: #001529; --accent: #fadb14; --danger: #ff4d4f; --bg: #000c17; --card-bg: #001529; --text: #ffffff; }
-        body { margin: 0; font-family: 'Outfit', sans-serif; background: var(--bg); color: var(--text); overflow-x: hidden; }
-        .header { background: var(--primary); padding: 12px 24px; border-bottom: 2px solid var(--accent); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; }
-        .main-container { padding: 16px; max-width: 1920px; margin: 0 auto; }
-        .executive-card { background: var(--card-bg); border-radius: 8px; padding: 16px; border: 1px solid rgba(255,255,255,0.1); height: 100%; min-height: 100px; }
-        .kpi-value { font-size: 38px; font-weight: 700; color: var(--accent); line-height: 1.1; }
-        .kpi-sub-value { font-size: 14px; font-weight: 600; color: #52c41a; margin-top: 4px; }
-        .kpi-label { font-size: 11px; text-transform: uppercase; color: rgba(255,255,255,0.4); letter-spacing: 1.5px; margin-bottom: 8px; }
-        .ant-table { background: transparent !important; color: white !important; }
-        .ant-table-thead > tr > th { background: rgba(255,255,255,0.05) !important; color: rgba(255,255,255,0.5) !important; border-bottom: 1px solid rgba(255,255,255,0.1) !important; font-size: 10px; }
-        .ant-table-tbody > tr > td { border-bottom: 1px solid rgba(255,255,255,0.05) !important; font-size: 12px; }
-        .ant-table-cell { color: white !important; }
-        .version-tag { background: #52c41a; color: black; font-weight: 900; padding: 2px 10px; border-radius: 4px; font-size: 10px; margin-left: 12px; animation: blink 2s infinite; }
-        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        :root { 
+            --primary: #003a8c; 
+            --accent: #fadb14; 
+            --danger: #ff4d4f; 
+            --bg: #f0f2f5; 
+            --card-bg: #ffffff; 
+            --text-main: #1e293b;
+            --text-sub: #64748b;
+            --border: #e2e8f0;
+        }
+        body { margin: 0; font-family: 'Outfit', sans-serif; background: var(--bg); color: var(--text-main); }
+        .header { background: #ffffff; padding: 12px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+        .main-container { padding: 24px; max-width: 1920px; margin: 0 auto; }
+        .executive-card { background: var(--card-bg); border-radius: 12px; padding: 20px; border: 1px solid var(--border); height: 100%; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); transition: all 0.2s; }
+        .executive-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        .kpi-value { font-size: 34px; font-weight: 700; color: var(--primary); line-height: 1.1; }
+        .kpi-sub-value { font-size: 13px; font-weight: 500; color: #10b981; margin-top: 4px; }
+        .kpi-label { font-size: 11px; text-transform: uppercase; color: var(--text-sub); letter-spacing: 1px; margin-bottom: 8px; font-weight: 600; }
+        .ant-table { background: transparent !important; }
+        .ant-table-thead > tr > th { background: #f8fafc !important; color: var(--text-sub) !important; border-bottom: 1px solid var(--border) !important; font-size: 10px; font-weight: 700; }
+        .ant-table-tbody > tr > td { border-bottom: 1px solid #f1f5f9 !important; font-size: 12px; color: var(--text-main); }
+        .ant-tag { border-radius: 4px; border: none; font-weight: 600; }
+        .nav-brand { font-size: 18px; font-weight: 700; color: var(--primary); letter-spacing: -0.5px; }
+        .nav-brand span { color: #f97316; }
     </style>
 </head>
 <body>
@@ -44,7 +53,7 @@
             constructor(props) { super(props); this.state = { hasError: false }; }
             static getDerivedStateFromError(error) { return { hasError: true }; }
             render() {
-                if (this.state.hasError) return <div style={{padding: 20, color: '#ff4d4f', border: '1px solid #ff4d4f', borderRadius: 8, background: '#001529'}}>⚠️ Dashboard Component Error - Vui lòng F5</div>;
+                if (this.state.hasError) return <div style={{padding: 20, color: '#ff4d4f', border: '1px solid #ff4d4f', borderRadius: 12, background: '#fff'}}>⚠️ Dashboard Error - Vui lòng F5 trang</div>;
                 return this.props.children;
             }
         }
@@ -68,94 +77,93 @@
                         fetch(`${API_BASE}/sla-risk`).then(res => res.json()),
                         fetch(`${API_BASE}/province-performance`).then(res => res.json())
                     ]);
-                    
                     setStats(s && !s.error ? s : null);
                     setBcvhData(Array.isArray(b) ? b : []);
                     setBottlenecks(Array.isArray(n) ? n : []);
                     setSlaRisk(Array.isArray(r) ? r : []);
                     setProvinceChartData(Array.isArray(p) ? p : []);
-                } catch (err) { 
-                    message.error("Mất kết nối API 8010"); 
-                } finally { setLoading(false); }
+                } catch (err) { message.error("API Error 8010"); } 
+                finally { setLoading(false); }
             };
 
             useEffect(() => { fetchAll(); }, []);
 
-            if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#000c17', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#fadb14" /><p style={{color: 'white', marginTop: 16}}>SYNCING EXECUTIVE PANEL...</p></div>;
+            if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#f0f2f5', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#003a8c" /><p style={{marginTop: 16, color: '#64748b'}}>Đang khởi động EXECUTIVE CENTER...</p></div>;
 
             if (!stats) return (
-                <Layout style={{minHeight: '100vh', background: 'var(--bg)'}}>
-                    <div className="header"><Title level={4} style={{color: 'white', margin: 0}}>VNPOST HUE DOC</Title></div>
-                    <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title={<span style={{color: 'white'}}>Executive System Ready</span>} subTitle={<span style={{color: 'rgba(255,255,255,0.5)'}}>Vui lòng nạp Snapshot Logistics để bắt đầu điều hành.</span>} extra={<Button type="primary" size="large" onClick={() => window.location.reload()} style={{background: 'var(--accent)', color: 'black', border: 'none'}}>IMPORT DỮ LIỆU</Button>} /></div>
+                <Layout style={{minHeight: '100vh', background: '#f0f2f5'}}>
+                    <div className="header"><div className="nav-brand">VNPOST HUẾ <span>D.O.C</span></div></div>
+                    <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống Điều hành Sẵn sàng" subTitle="Vui lòng nạp dữ liệu logistics để hiển thị chỉ số." extra={<Button type="primary" size="large" onClick={() => window.location.reload()}>IMPORT DATA</Button>} /></div>
                 </Layout>
             );
 
             const sTotal = stats?.kpis?.total || 1;
             const successRate = (( (stats?.kpis?.success || 0) / sTotal) * 100).toFixed(1);
-
-            // SAFE RECHARTS DETECTION
             const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip: ReTooltip, Cell } = window.Recharts || {};
 
             return (
                 <ErrorBoundary>
-                <Layout style={{minHeight: '100vh', background: 'var(--bg)'}}>
+                <Layout style={{minHeight: '100vh', background: '#f0f2f5'}}>
                     <div className="header">
                         <Space size="large">
-                            <Title level={4} style={{color: 'white', margin: 0, letterSpacing: 2}}>VNPOST HUE <span style={{color: 'var(--accent)', fontSize: 14}}>DOC</span><span className="version-tag">V2.1 - STABLE</span></Title>
-                            <Tag color="gold" style={{background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', fontSize: 10}}>DATASET ACTIVE</Tag>
+                            <div className="nav-brand">VNPOST HUẾ <span>D.O.C</span></div>
+                            <Tag color="processing" style={{borderRadius: 100, padding: '0 12px'}}>LOGISTICS V2.2</Tag>
                         </Space>
                         <Space>
-                            <Button icon={<span>🔄</span>} onClick={fetchAll} ghost />
+                            <Button type="primary" onClick={() => window.location.reload()} style={{background: '#003a8c', border: 'none'}}>IMPORT EXCEL</Button>
+                            <Button icon={<span>🔄</span>} onClick={fetchAll} />
                         </Space>
                     </div>
 
                     <div className="main-container">
-                        <Row gutter={[16, 16]}>
-                            <Col span={6}><div className="executive-card"><div className="kpi-label">Tổng sản lượng</div><div className="kpi-value">{(stats?.kpis?.total ?? 0).toLocaleString()}</div></div></Col>
-                            <Col span={6}><div className="executive-card" style={{borderLeft: '5px solid #52c41a'}}><div className="kpi-label">Phát thành công</div><div className="kpi-value" style={{color: '#52c41a'}}>{(stats?.kpis?.success ?? 0).toLocaleString()}</div><div className="kpi-sub-value">{successRate}% Success Rate</div><Progress percent={parseFloat(successRate)} size="small" strokeColor="#52c41a" trailColor="rgba(255,255,255,0.1)" showInfo={false} style={{marginTop: 10}} /></div></Col>
-                            <Col span={6}><div className="executive-card"><div className="kpi-label">Tồn đang xử lý</div><div className="kpi-value" style={{color: '#faad14'}}>{(stats?.kpis?.pending ?? 0).toLocaleString()}</div></div></Col>
-                            <Col span={6}><div className="executive-card" style={{borderColor: 'var(--danger)'}}><div className="kpi-label">Vi phạm SLA</div><div className="kpi-value" style={{color: 'var(--danger)'}}>{(stats?.kpis?.sla ?? 0).toLocaleString()}</div></div></Col>
+                        <Row gutter={[20, 20]}>
+                            {/* KPI SECTION */}
+                            <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #003a8c'}}><div className="kpi-label">Tổng sản lượng VIP</div><div className="kpi-value">{(stats?.kpis?.total ?? 0).toLocaleString()}</div></div></Col>
+                            <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #10b981'}}><div className="kpi-label">Phát thành công</div><div className="kpi-value" style={{color: '#10b981'}}>{(stats?.kpis?.success ?? 0).toLocaleString()}</div><div className="kpi-sub-value">↑ {successRate}% Success Rate</div></div></Col>
+                            <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #f59e0b'}}><div className="kpi-label">Tồn đang xử lý</div><div className="kpi-value" style={{color: '#f59e0b'}}>{(stats?.kpis?.pending ?? 0).toLocaleString()}</div></div></Col>
+                            <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #ef4444'}}><div className="kpi-label">Vi phạm SLA</div><div className="kpi-value" style={{color: '#ef4444'}}>{(stats?.kpis?.sla ?? 0).toLocaleString()}</div></div></Col>
 
-                            <Col span={14}>
+                            <Col span={15}>
                                 <div className="executive-card">
-                                    <Title level={5} style={{color: 'white', marginBottom: 16, fontSize: 14}}>📊 HIỆU SUẤT BCVH</Title>
+                                    <Title level={5} style={{marginBottom: 20, fontSize: 14, color: '#475569'}}>📊 HIỆU SUẤT BCVH (BƯU CỤC VẬN HÀNH)</Title>
                                     <Table dataSource={bcvhData} columns={[
-                                        { title: 'BƯU CỤC', dataIndex: 'name' },
-                                        { title: 'TỔNG', dataIndex: 'total', align: 'right' },
-                                        { title: 'THÀNH CÔNG', dataIndex: 'success', align: 'right', render: (v) => <span style={{color: '#b7eb8f'}}>{v}</span> },
-                                        { title: 'TỶ LỆ (%)', dataIndex: 'rate', align: 'center', render: (v) => <Tag color={v > 90 ? 'green' : 'orange'} style={{fontSize: 10}}>{v}%</Tag> }
+                                        { title: 'TÊN BƯU CỤC', dataIndex: 'name', render: t => <Text strong style={{color: '#334155'}}>{t}</Text> },
+                                        { title: 'SẢN LƯỢNG', dataIndex: 'total', align: 'right' },
+                                        { title: 'THÀNH CÔNG', dataIndex: 'success', align: 'right', render: v => <Text style={{color: '#10b981', fontWeight: 600}}>{v}</Text> },
+                                        { title: 'TỶ LỆ (%)', dataIndex: 'rate', align: 'center', render: v => <Tag color={v > 85 ? 'success' : 'warning'}>{v}%</Tag> }
                                     ]} pagination={{pageSize: 8}} size="small" />
                                 </div>
                             </Col>
 
-                            <Col span={10}>
+                            <Col span={9}>
                                 <div className="executive-card">
-                                    <Title level={5} style={{color: 'white', marginBottom: 16, fontSize: 14}}>📈 HIỆU SUẤT THEO TỈNH PHÁT</Title>
+                                    <Title level={5} style={{marginBottom: 20, fontSize: 14, color: '#475569'}}>📈 HIỆU SUẤT THEO TỈNH PHÁT</Title>
                                     <div style={{height: 330}}>
                                         {ResponsiveContainer && provinceChartData.length > 0 ? (
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <BarChart data={provinceChartData} layout="vertical" margin={{ left: 80, right: 30 }}>
                                                     <XAxis type="number" hide />
-                                                    <YAxis dataKey="name" type="category" tick={{fill: 'rgba(255,255,255,0.7)', fontSize: 10}} width={140} />
-                                                    <ReTooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{background: '#001529', border: '1px solid var(--accent)', color: 'white'}} />
+                                                    <YAxis dataKey="name" type="category" tick={{fill: '#64748b', fontSize: 10}} width={120} />
+                                                    <ReTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'}} />
                                                     <Bar dataKey="rate" radius={[0, 4, 4, 0]} isAnimationActive={false}>
-                                                        {provinceChartData.map((e, i) => <Cell key={i} fill={e.rate > 85 ? '#52c41a' : '#faad14'} />)}
+                                                        {provinceChartData.map((e, i) => <Cell key={i} fill={e.rate > 85 ? '#003a8c' : '#94a3b8'} />)}
                                                     </Bar>
                                                 </BarChart>
                                             </ResponsiveContainer>
-                                        ) : <div style={{padding: 50, textAlign: 'center', color: 'rgba(255,255,255,0.4)'}}><Empty description="Chưa có dữ liệu đồ thị" /></div>}
+                                        ) : <div style={{padding: 50, textAlign: 'center'}}><Empty description="Chưa có dữ liệu" /></div>}
                                     </div>
                                 </div>
                             </Col>
 
                             <Col span={24}>
-                                <div className="executive-card">
-                                    <Title level={5} style={{color: 'white', marginBottom: 16, fontSize: 14}}>🛡️ ACTION CENTER (RỦI RO SLA)</Title>
+                                <div className="executive-card" style={{borderLeft: '4px solid #ef4444'}}>
+                                    <Title level={5} style={{marginBottom: 20, fontSize: 14, color: '#475569'}}>🛡️ ACTION CENTER: QUẢN TRỊ RỦI RO SLA</Title>
                                     <Table dataSource={slaRisk} columns={[
-                                        { title: 'MÃ BƯU GỬI', dataIndex: 'tracking_id' },
+                                        { title: 'MÃ BƯU GỬI', dataIndex: 'tracking_id', render: t => <Text code>{t}</Text> },
                                         { title: 'TỈNH PHÁT', dataIndex: 'province' },
-                                        { title: 'BƯU CỤC VẬN HÀNH', dataIndex: 'post_office_name' },
-                                        { title: 'TUỔI ĐƠN', dataIndex: 'aging', render: (v) => <Tag color="error" style={{fontSize: 10, fontWeight: 700}}>{v} NGÀY</Tag> }
+                                        { title: 'BCVH HIỆN TẠI', dataIndex: 'post_office_name' },
+                                        { title: 'TUỔI ĐƠN', dataIndex: 'aging', render: v => <Tag color="error">{v} NGÀY</Tag> },
+                                        { title: 'HÀNH ĐỘNG', render: () => <Button size="small" type="link">Chi tiết</Button> }
                                     ]} pagination={{pageSize: 5}} size="small" />
                                 </div>
                             </Col>
