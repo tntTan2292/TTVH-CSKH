@@ -58,7 +58,7 @@
             const fetchAll = async () => {
                 setLoading(true);
                 try {
-                    const [s, b, n, r, p_raw] = await Promise.all([
+                    const [s, b, n, r, p] = await Promise.all([
                         fetch(`${API_BASE}/stats`).then(res => res.json()),
                         fetch(`${API_BASE}/bcvh-summary`).then(res => res.json()),
                         fetch(`${API_BASE}/bcvh-bottleneck`).then(res => res.json()),
@@ -70,12 +70,7 @@
                     setBcvhData(Array.isArray(b) ? b : []);
                     setBottlenecks(Array.isArray(n) ? n : []);
                     setSlaRisk(Array.isArray(r) ? r : []);
-
-                    if (p_raw && p_raw.labels && p_raw.datasets?.[0]?.data) {
-                        setProvinceChartData(p_raw.labels.map((l, i) => ({ name: l, rate: p_raw.datasets[0].data[i] })));
-                    } else {
-                        setProvinceChartData([]);
-                    }
+                    setProvinceChartData(Array.isArray(p) ? p : []);
                 } catch (err) { 
                     message.error("Mất kết nối API 8010"); 
                 } finally { setLoading(false); }
@@ -120,7 +115,7 @@
                     <div className="header">
                         <Space size="large">
                             <Title level={4} style={{color: 'white', margin: 0, letterSpacing: 2}}>VNPOST HUE <span style={{color: 'var(--accent)', fontSize: 14}}>DOC</span><span className="version-tag">V2.1 - STABLE</span></Title>
-                            <Tag color="gold" style={{background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', fontSize: 10}}>DATASET V{stats?.session_info?.id ?? '0'}</Tag>
+                            <Tag color="gold" style={{background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', fontSize: 10}}>DATASET ACTIVE</Tag>
                         </Space>
                         <Space>
                             <Button type="primary" onClick={handleUpload} style={{background: 'var(--accent)', color: 'black', fontWeight: 700, border: 'none'}}>NHẬP DỮ LIỆU</Button>
@@ -153,16 +148,16 @@
                                     <div style={{height: 330}}>
                                         {ResponsiveContainer && provinceChartData.length > 0 ? (
                                             <ResponsiveContainer width="100%" height="100%">
-                                                <BarChart data={provinceChartData} layout="vertical" margin={{ left: 60, right: 30 }}>
+                                                <BarChart data={provinceChartData} layout="vertical" margin={{ left: 80, right: 30 }}>
                                                     <XAxis type="number" hide />
-                                                    <YAxis dataKey="name" type="category" tick={{fill: 'rgba(255,255,255,0.7)', fontSize: 10}} width={120} />
+                                                    <YAxis dataKey="name" type="category" tick={{fill: 'rgba(255,255,255,0.7)', fontSize: 10}} width={140} />
                                                     <ReTooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{background: '#001529', border: '1px solid var(--accent)', color: 'white'}} />
                                                     <Bar dataKey="rate" radius={[0, 4, 4, 0]}>
                                                         {provinceChartData.map((e, i) => <Cell key={i} fill={e.rate > 85 ? '#52c41a' : '#faad14'} />)}
                                                     </Bar>
                                                 </BarChart>
                                             </ResponsiveContainer>
-                                        ) : <div style={{padding: 50, textAlign: 'center', color: 'rgba(255,255,255,0.4)'}}><Empty description="Chưa có dữ liệu đồ thị" /></div>}
+                                        ) : <div style={{padding: 50, textAlign: 'center', color: 'rgba(255,255,255,0.4)'}}><Empty description="Không có dữ liệu đồ thị" /></div>}
                                     </div>
                                 </div>
                             </Col>
