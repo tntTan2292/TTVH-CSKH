@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER</title>
+    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V2.0</title>
     <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
@@ -18,13 +18,14 @@
         .header { background: var(--primary); padding: 12px 24px; border-bottom: 2px solid var(--accent); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; }
         .main-container { padding: 16px; max-width: 1920px; margin: 0 auto; }
         .executive-card { background: var(--card-bg); border-radius: 8px; padding: 16px; border: 1px solid rgba(255,255,255,0.1); height: 100%; min-height: 100px; }
-        .kpi-value { font-size: 32px; font-weight: 700; color: var(--accent); line-height: 1.1; }
-        .kpi-sub-value { font-size: 13px; font-weight: 400; color: rgba(255,255,255,0.6); margin-top: 4px; }
+        .kpi-value { font-size: 36px; font-weight: 700; color: var(--accent); line-height: 1.1; }
+        .kpi-sub-value { font-size: 14px; font-weight: 600; color: #52c41a; margin-top: 4px; }
         .kpi-label { font-size: 11px; text-transform: uppercase; color: rgba(255,255,255,0.5); letter-spacing: 1px; margin-bottom: 8px; }
         .ant-table { background: transparent !important; color: white !important; }
         .ant-table-thead > tr > th { background: rgba(255,255,255,0.05) !important; color: rgba(255,255,255,0.6) !important; border-bottom: 1px solid rgba(255,255,255,0.1) !important; font-size: 11px; }
         .ant-table-tbody > tr > td { border-bottom: 1px solid rgba(255,255,255,0.05) !important; font-size: 12px; }
         .ant-table-cell { color: white !important; }
+        .version-tag { background: #52c41a; color: black; font-weight: 900; padding: 2px 8px; border-radius: 4px; font-size: 10px; margin-left: 8px; }
     </style>
 </head>
 <body>
@@ -34,7 +35,7 @@
         const { useState, useEffect, Component } = React;
         const { Layout, Row, Col, Table, Tag, Progress, Button, message, Space, Typography, Badge, Modal, Result, Empty } = window.antd;
         const { Text, Title } = Typography;
-        const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip: ReTooltip, Legend, Cell } = window.Recharts || {};
+        const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip: ReTooltip, Cell } = window.Recharts || {};
         const API_BASE = "http://localhost:8010/api/dashboard";
 
         class ErrorBoundary extends Component {
@@ -64,7 +65,6 @@
                         fetch(`${API_BASE}/sla-risk`).then(res => res.json()),
                         fetch(`${API_BASE}/province-performance`).then(res => res.json())
                     ]);
-                    
                     setStats(s && !s.error ? s : null);
                     setBcvhData(Array.isArray(b) ? b : []);
                     setBottlenecks(Array.isArray(n) ? n : []);
@@ -93,23 +93,16 @@
                 input.click();
             };
 
-            if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#000c17', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#fadb14" /><p style={{color: 'white', marginTop: 16}}>Đang chuẩn bị Operational Panel...</p></div>;
+            if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#000c17', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#fadb14" /><p style={{color: 'white', marginTop: 16}}>Đang khởi động EXECUTIVE V2.0...</p></div>;
 
-            if (!stats) return (
-                <Layout style={{minHeight: '100vh', background: 'var(--bg)'}}>
-                    <div className="header"><Title level={4} style={{color: 'white', margin: 0}}>VNPOST HUE DOC</Title></div>
-                    <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title={<span style={{color: 'white'}}>Executive System Ready</span>} subTitle={<span style={{color: 'rgba(255,255,255,0.5)'}}>Chưa ghi nhận Snapshot. Vui lòng nạp dữ liệu Logistics.</span>} extra={<Button type="primary" size="large" onClick={handleUpload} style={{background: 'var(--accent)', color: 'black', border: 'none'}}>BẮT ĐẦU IMPORT</Button>} /></div>
-                </Layout>
-            );
-
-            const successRate = stats ? ((stats.kpis.success / stats.kpis.total) * 100).toFixed(1) : 0;
+            const successRate = stats ? ((stats.kpis.success / stats.kpis.total) * 100).toFixed(1) : "0.0";
 
             return (
                 <ErrorBoundary>
                 <Layout style={{minHeight: '100vh', background: 'var(--bg)'}}>
                     <div className="header">
                         <Space size="large">
-                            <Title level={4} style={{color: 'white', margin: 0, letterSpacing: 1}}>VNPOST HUE <span style={{color: 'var(--accent)', fontSize: 12}}>DOC</span></Title>
+                            <Title level={4} style={{color: 'white', margin: 0, letterSpacing: 1}}>VNPOST HUE <span style={{color: 'var(--accent)', fontSize: 12}}>DOC</span><span className="version-tag">V2.0 - PROVINCE MODE</span></Title>
                             <Tag color="gold" style={{background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)'}}>SNAPSHOT V{stats?.session_info?.id ?? '0'}</Tag>
                         </Space>
                         <Space>
@@ -123,11 +116,11 @@
                             <Col span={6}><div className="executive-card"><div className="kpi-label">Tổng sản lượng</div><div className="kpi-value">{(stats?.kpis?.total ?? 0).toLocaleString()}</div></div></Col>
                             
                             <Col span={6}>
-                                <div className="executive-card">
+                                <div className="executive-card" style={{borderLeft: '4px solid #52c41a'}}>
                                     <div className="kpi-label">Phát thành công</div>
                                     <div className="kpi-value" style={{color: '#52c41a'}}>{(stats?.kpis?.success ?? 0).toLocaleString()}</div>
                                     <div className="kpi-sub-value">{successRate}% Success Rate</div>
-                                    <Progress percent={parseFloat(successRate)} size="small" strokeColor="#52c41a" trailColor="rgba(255,255,255,0.1)" showInfo={false} />
+                                    <Progress percent={parseFloat(successRate)} size="small" strokeColor="#52c41a" trailColor="rgba(255,255,255,0.1)" showInfo={false} style={{marginTop: 8}} />
                                 </div>
                             </Col>
 
@@ -153,13 +146,13 @@
                                     <div style={{height: 330}}>
                                         {ResponsiveContainer && provinceData.length > 0 ? (
                                             <ResponsiveContainer width="100%" height="100%">
-                                                <BarChart data={provinceData} layout="vertical" margin={{ left: 40, right: 30 }}>
+                                                <BarChart data={provinceData} layout="vertical" margin={{ left: 50, right: 30 }}>
                                                     <XAxis type="number" hide />
-                                                    <YAxis dataKey="province" type="category" tick={{fill: 'white', fontSize: 10}} width={100} />
+                                                    <YAxis dataKey="province" type="category" tick={{fill: 'white', fontSize: 10}} width={120} />
                                                     <ReTooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{background: '#001529', border: '1px solid var(--accent)', color: 'white'}} />
-                                                    <Bar dataKey="rate" name="Tỷ lệ thành công (%)" radius={[0, 4, 4, 0]}>
+                                                    <Bar dataKey="rate" name="Tỷ lệ (%)" radius={[0, 4, 4, 0]}>
                                                         {provinceData.map((entry, index) => (
-                                                            <Cell key={`cell-${index}`} fill={entry.rate > 80 ? '#52c41a' : '#faad14'} />
+                                                            <Cell key={`cell-${index}`} fill={entry.rate > 85 ? '#52c41a' : '#faad14'} />
                                                         ))}
                                                     </Bar>
                                                 </BarChart>

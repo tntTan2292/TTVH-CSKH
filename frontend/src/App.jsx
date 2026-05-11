@@ -1,230 +1,229 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, Component } from 'react';
 import axios from 'axios';
 import { 
-  Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, 
   ResponsiveContainer, Cell
 } from 'recharts';
 import { 
-  Layout, Card, Row, Col, Statistic, Table, Tag, 
-  Button, Typography, Modal, Input, message, Badge, Space, 
-  Progress, Divider, Tabs, Empty, Spin, Upload
+  Layout, Row, Col, Table, Tag, Progress, Button, message, Space, 
+  Typography, Badge, Modal, Result, Empty, Spin
 } from 'antd';
 import { 
-  DashboardOutlined, AlertOutlined, FileExcelOutlined, 
-  CheckCircleOutlined, ClockCircleOutlined, RocketOutlined, 
-  SafetyCertificateOutlined, UserOutlined, LockOutlined, 
-  LogoutOutlined, EnvironmentOutlined, ArrowUpOutlined, 
-  SearchOutlined, WarningOutlined, SyncOutlined, DeleteOutlined,
-  CloudSyncOutlined, LoadingOutlined, ImportOutlined,
-  UploadOutlined
+  DashboardOutlined, AlertOutlined, CheckCircleOutlined, 
+  ClockCircleOutlined, RocketOutlined, SyncOutlined, 
+  WarningOutlined, ImportOutlined, EnvironmentOutlined
 } from '@ant-design/icons';
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
 
-const VNPOST_NAVY = '#00387b';
-const VNPOST_GOLD = '#fdb913';
+const API_BASE = 'http://localhost:8010/api/dashboard';
+const UPLOAD_URL = 'http://localhost:8010/upload';
 
-// Set base URL for API
-const API_BASE = 'http://localhost:8000';
+// THEME TOKENS
+const COLORS = {
+  bg: '#000c17',
+  card: '#001529',
+  accent: '#fadb14',
+  success: '#52c41a',
+  danger: '#ff4d4f'
+};
+
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError(error) { return { hasError: true }; }
+  render() {
+    if (this.state.hasError) return <div style={{padding: 20, color: '#ff4d4f', background: COLORS.card, borderRadius: 8}}>⚠️ Widget Crash - Vui lòng F5</div>;
+    return this.props.children;
+  }
+}
 
 const App = () => {
-  const [data, setData] = useState(null);
+  const [stats, setStats] = useState(null);
+  const [bcvhData, setBcvhData] = useState([]);
+  const [bottlenecks, setBottlenecks] = useState([]);
+  const [slaRisk, setSlaRisk] = useState([]);
+  const [provinceData, setProvinceData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
 
-  const fetchData = async () => {
+  const fetchAll = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API_BASE}/stats`);
-      setData(res.data);
+      const [s, b, n, r, p] = await Promise.all([
+        axios.get(`${API_BASE}/stats`).then(res => res.data),
+        axios.get(`${API_BASE}/bcvh-summary`).then(res => res.data),
+        axios.get(`${API_BASE}/bcvh-bottleneck`).then(res => res.data),
+        axios.get(`${API_BASE}/sla-risk`).then(res => res.data),
+        axios.get(`${API_BASE}/province-performance`).then(res => res.data)
+      ]);
+      
+      setStats(s && !s.error ? s : null);
+      setBcvhData(Array.isArray(b) ? b : []);
+      setBottlenecks(Array.isArray(n) ? n : []);
+      setSlaRisk(Array.isArray(r) ? r : []);
+      setProvinceData(Array.isArray(p) ? p : []);
     } catch (err) {
-      console.error("Fetch Error:", err);
-      message.error("Không thể kết nối đến máy chủ dữ liệu.");
+      console.error("API Failure:", err);
+      message.error("Mất kết nối Enterprise Backend 8010");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchAll(); }, []);
 
-  const handleUpload = async (file) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    setUploading(true);
-    try {
-      const res = await axios.post(`${API_BASE}/upload`, formData);
-      message.success(res.data.message);
-      fetchData(); // Refresh data
-    } catch (err) {
-      message.error("Lỗi nạp file: " + (err.response?.data?.detail || err.message));
-    } finally {
-      setUploading(false);
-    }
-    return false; // Prevent default upload behavior
+  const handleUpload = async () => {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = '.xlsx';
+    input.onchange = async (e) => {
+      const formData = new FormData();
+      formData.append('file', e.target.files[0]);
+      const hide = message.loading('Đang khởi tạo Snapshot...', 0);
+      try {
+        const res = await axios.post(UPLOAD_URL, formData);
+        message.success("Snapshot Created!");
+        fetchAll();
+      } catch (err) {
+        Modal.error({ title: 'Import Error', content: err.response?.data?.detail || "Upload Failed" });
+      } finally { hide(); }
+    };
+    input.click();
   };
 
-  if (loading && !data) {
-    return <div className="h-screen w-screen flex items-center justify-center bg-gray-100"><Spin size="large" tip="Đang tải dữ liệu VIP..." /></div>;
-  }
+  if (loading && !stats) return <div className="h-screen w-screen flex flex-col items-center justify-center" style={{background: COLORS.bg, color: 'white'}}><Spin size="large" /><p className="mt-4">Đang đồng bộ EXECUTIVE V2.0...</p></div>;
 
-  const { customer, kpis, radarData, directionData, bottlenecks, slaList } = data || {
-    customer: { name: 'Chưa có dữ liệu' },
-    kpis: { total: 0, success: 0, pending: 0, sla: 0 },
-    radarData: [],
-    directionData: [],
-    bottlenecks: [],
-    slaList: []
-  };
+  if (!stats) return (
+    <Layout style={{ minHeight: '100vh', background: COLORS.bg }}>
+      <Header className="flex justify-between items-center" style={{ background: COLORS.card, borderBottom: `2px solid ${COLORS.accent}` }}>
+        <Title level={4} style={{ color: 'white', margin: 0 }}>VNPOST HUE DOC</Title>
+      </Header>
+      <div className="flex-1 flex items-center justify-center">
+        <Result status="info" title={<span style={{color: 'white'}}>System Ready</span>} subTitle={<span style={{color: 'rgba(255,255,255,0.5)'}}>Chưa có Snapshot. Vui lòng nạp dữ liệu.</span>} extra={<Button type="primary" size="large" onClick={handleUpload} style={{background: COLORS.accent, color: 'black', border: 'none'}}>BẮT ĐẦU IMPORT</Button>} />
+      </div>
+    </Layout>
+  );
+
+  const successRate = stats ? ((stats.kpis.success / stats.kpis.total) * 100).toFixed(1) : "0.0";
 
   return (
-    <Layout style={{ minHeight: '100vh', background: '#f0f2f5' }}>
-      <Header className="vnpost-header">
-        <div className="flex items-center">
-          <RocketOutlined style={{ fontSize: 32, color: VNPOST_GOLD, marginRight: 12 }} />
-          <div className="flex flex-col">
-            <Title level={3} style={{ color: '#fff', margin: 0, lineHeight: 1 }}>VNPOST HUẾ</Title>
-            <Text style={{ color: VNPOST_GOLD, fontSize: 10, fontWeight: 900 }}>VIP CUSTOMER SERVICE DASHBOARD</Text>
-          </div>
-        </div>
-        
-        <Space size="middle">
-          <div className="text-white mr-4 flex flex-col items-end">
-            <Text style={{ color: '#fff', fontSize: 12 }}>Đang theo dõi VIP:</Text>
-            <Text strong style={{ color: VNPOST_GOLD, fontSize: 14 }}>{customer.name}</Text>
-          </div>
-          
-          <Upload beforeUpload={handleUpload} showUploadList={false}>
-            <Button 
-              type="primary" 
-              icon={<ImportOutlined />} 
-              style={{ background: '#52c41a', border: 'none', fontWeight: 'bold' }}
-              loading={uploading}
-            >
-              NHẬP EXCEL MỚI
-            </Button>
-          </Upload>
-          
-          <Button icon={<SyncOutlined />} onClick={fetchData} loading={loading}>LÀM MỚI</Button>
-        </Space>
-      </Header>
+    <ErrorBoundary>
+      <Layout style={{ minHeight: '100vh', background: COLORS.bg, color: 'white' }}>
+        <Header className="flex justify-between items-center px-6" style={{ background: COLORS.card, borderBottom: `2px solid ${COLORS.accent}`, position: 'sticky', top: 0, z-index: 1000 }}>
+          <Space size="large">
+            <Title level={4} style={{ color: 'white', margin: 0, letterSpacing: 1 }}>
+              VNPOST HUE <span style={{ color: COLORS.accent, fontSize: 12 }}>DOC</span>
+              <span style={{ background: COLORS.success, color: 'black', padding: '2px 8px', borderRadius: 4, fontSize: 10, marginLeft: 12, fontWeight: 900 }}>V2.0 - PROVINCE MODE</span>
+            </Title>
+            <Tag color="gold" style={{ background: 'transparent', border: `1px solid ${COLORS.accent}`, color: COLORS.accent }}>SNAPSHOT V{stats.session_info.id}</Tag>
+          </Space>
+          <Space>
+            <Button type="primary" onClick={handleUpload} style={{ background: COLORS.accent, color: 'black', fontWeight: 600, border: 'none' }} icon={<ImportOutlined />}>IMPORT DATA</Button>
+            <Button icon={<SyncOutlined />} onClick={fetchAll} ghost />
+          </Space>
+        </Header>
 
-      <Content style={{ padding: '24px' }}>
-        {/* KPI CARDS */}
-        <Row gutter={[16, 16]} className="mb-6">
-          <Col xs={24} sm={12} md={6}>
-            <Card className="kpi-card">
-              <Statistic title={<Text strong>TỔNG SẢN LƯỢNG VIP</Text>} value={kpis.total} prefix={<DashboardOutlined style={{color: VNPOST_NAVY}} />} />
-              <Progress percent={100} strokeColor={VNPOST_NAVY} size="small" showInfo={false} />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card className="kpi-card">
-              <Statistic title={<Text strong style={{color: '#52c41a'}}>PHÁT THÀNH CÔNG</Text>} value={kpis.success} valueStyle={{color: '#52c41a'}} prefix={<CheckCircleOutlined />} />
-              <div className="flex items-center justify-between">
-                <Progress percent={kpis.total ? Math.round((kpis.success/kpis.total)*100) : 0} strokeColor="#52c41a" size="small" style={{width: '70%'}} />
-                <Badge count={kpis.success} overflowCount={999} style={{ backgroundColor: '#52c41a' }} />
+        <Content className="p-6 max-w-[1920px] mx-auto w-full">
+          {/* KPI CARDS */}
+          <Row gutter={[16, 16]} className="mb-4">
+            <Col span={6}>
+              <div className="p-4 rounded-lg" style={{ background: COLORS.card, border: '1px solid rgba(255,255,255,0.1)' }}>
+                <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, textTransform: 'uppercase', marginBottom: 8 }}>Tổng sản lượng</div>
+                <div style={{ fontSize: 32, fontWeight: 700, color: COLORS.accent }}>{stats.kpis.total.toLocaleString()}</div>
               </div>
-              <div className="mt-2 text-xs text-gray-400 italic">Mốc 30 đơn: {kpis.success}/30</div>
-              <Progress percent={Math.min(100, Math.round((kpis.success/30)*100))} strokeColor={VNPOST_GOLD} status="active" />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card className="kpi-card">
-              <Statistic title={<Text strong style={{color: VNPOST_GOLD}}>CHỜ PHÁT / LỖI</Text>} value={kpis.pending} valueStyle={{color: VNPOST_GOLD}} prefix={<ClockCircleOutlined />} />
-              <Progress percent={kpis.total ? Math.round((kpis.pending/kpis.total)*100) : 0} strokeColor={VNPOST_GOLD} size="small" />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card className={`kpi-card ${kpis.sla > 0 ? 'sla-critical' : ''}`}>
-              <Statistic title={<Text strong style={{color: '#ff4d4f'}}>VI PHẠM SLA (3 NGÀY)</Text>} value={kpis.sla} valueStyle={{color: '#ff4d4f', fontWeight: 'bold'}} prefix={<AlertOutlined />} />
-              <Tag color="red" icon={<WarningOutlined />}>Báo cáo lãnh đạo ngay</Tag>
-            </Card>
-          </Col>
-        </Row>
+            </Col>
+            <Col span={6}>
+              <div className="p-4 rounded-lg" style={{ background: COLORS.card, border: '1px solid rgba(255,255,255,0.1)', borderLeft: `4px solid ${COLORS.success}` }}>
+                <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, textTransform: 'uppercase', marginBottom: 8 }}>Phát thành công</div>
+                <div style={{ fontSize: 32, fontWeight: 700, color: COLORS.success }}>{stats.kpis.success.toLocaleString()}</div>
+                <div style={{ fontSize: 14, color: COLORS.success, fontWeight: 600 }}>{successRate}% Success Rate</div>
+                <Progress percent={parseFloat(successRate)} size="small" strokeColor={COLORS.success} trailColor="rgba(255,255,255,0.1)" showInfo={false} className="mt-2" />
+              </div>
+            </Col>
+            <Col span={6}>
+              <div className="p-4 rounded-lg" style={{ background: COLORS.card, border: '1px solid rgba(255,255,255,0.1)' }}>
+                <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, textTransform: 'uppercase', marginBottom: 8 }}>Tồn đang xử lý</div>
+                <div style={{ fontSize: 32, fontWeight: 700, color: '#faad14' }}>{stats.kpis.pending.toLocaleString()}</div>
+              </div>
+            </Col>
+            <Col span={6}>
+              <div className="p-4 rounded-lg" style={{ background: COLORS.card, border: `1px solid ${COLORS.danger}` }}>
+                <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, textTransform: 'uppercase', marginBottom: 8 }}>Vi phạm SLA</div>
+                <div style={{ fontSize: 32, fontWeight: 700, color: COLORS.danger }}>{stats.kpis.sla.toLocaleString()}</div>
+              </div>
+            </Col>
+          </Row>
 
-        {/* CHARTS */}
-        <Row gutter={[16, 16]} className="mb-6">
-          <Col xs={24} lg={12}>
-            <Card title={<><EnvironmentOutlined /> Hiệu suất phát VIP theo Tỉnh</>} className="kpi-card">
-              <div style={{ height: 350 }}>
-                {radarData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart data={radarData}>
-                      <PolarGrid />
-                      <PolarAngleAxis dataKey="subject" tick={{fontSize: 10, fontWeight: 600}} />
-                      <Radar name="Sản lượng" dataKey="A" stroke={VNPOST_NAVY} fill={VNPOST_NAVY} fillOpacity={0.6} />
-                      <Radar name="Hiệu suất (%)" dataKey="B" stroke={VNPOST_GOLD} fill={VNPOST_GOLD} fillOpacity={0.5} />
-                      <Tooltip />
-                    </RadarChart>
-                  </ResponsiveContainer>
-                ) : <div className="flex h-full items-center justify-center"><Empty description="Chưa có dữ liệu" /></div>}
+          <Row gutter={[16, 16]}>
+            <Col span={14}>
+              <div className="p-4 rounded-lg" style={{ background: COLORS.card, border: '1px solid rgba(255,255,255,0.1)' }}>
+                <Title level={5} style={{ color: 'white', marginBottom: 16 }}>📊 Hiệu suất Bưu cục Vận hành (BCVH)</Title>
+                <Table 
+                  dataSource={bcvhData} 
+                  size="small"
+                  pagination={{ pageSize: 8 }}
+                  columns={[
+                    { title: 'BƯU CỤC', dataIndex: 'name' },
+                    { title: 'TỔNG', dataIndex: 'total', align: 'right' },
+                    { title: 'THÀNH CÔNG', dataIndex: 'success', align: 'right', render: v => <span style={{color: '#b7eb8f'}}>{v}</span> },
+                    { title: 'SLA', dataIndex: 'sla', align: 'right', render: v => <span style={{color: v > 0 ? COLORS.danger : 'inherit'}}>{v}</span> },
+                    { title: 'TỶ LỆ (%)', dataIndex: 'rate', align: 'center', render: v => <Tag color={v > 90 ? 'green' : 'orange'}>{v}%</Tag> }
+                  ]}
+                  rowClassName="hover:bg-white/5"
+                />
               </div>
-            </Card>
-          </Col>
-          <Col xs={24} lg={12}>
-            <Card title={<><ArrowUpOutlined /> Phân bổ theo Hướng Đóng chuyển</>} className="kpi-card">
-              <div style={{ height: 350 }}>
-                {directionData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={directionData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <Tooltip cursor={{fill: 'transparent'}} />
-                      <Bar dataKey="value" name="Bưu gửi" fill={VNPOST_NAVY} radius={[4, 4, 0, 0]}>
-                         {directionData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={index % 2 === 0 ? VNPOST_NAVY : VNPOST_GOLD} />
+            </Col>
+
+            <Col span={10}>
+              <div className="p-4 rounded-lg" style={{ background: COLORS.card, border: '1px solid rgba(255,255,255,0.1)' }}>
+                <Title level={5} style={{ color: 'white', marginBottom: 16 }}>📈 Hiệu suất theo Tỉnh phát</Title>
+                <div style={{ height: 330 }}>
+                  {provinceData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={provinceData} layout="vertical" margin={{ left: 50, right: 30 }}>
+                        <XAxis type="number" hide />
+                        <YAxis dataKey="province" type="category" tick={{fill: 'white', fontSize: 10}} width={120} />
+                        <ReTooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{background: COLORS.card, border: `1px solid ${COLORS.accent}`, color: 'white'}} />
+                        <Bar dataKey="rate" radius={[0, 4, 4, 0]}>
+                          {provinceData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.rate > 85 ? COLORS.success : '#faad14'} />
                           ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : <div className="flex h-full items-center justify-center"><Empty description="Chưa có dữ liệu" /></div>}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : <div className="h-full flex items-center justify-center text-gray-500">Không có dữ liệu tỉnh phát</div>}
+                </div>
               </div>
-            </Card>
-          </Col>
-        </Row>
+            </Col>
 
-        {/* BOTTOM SECTION */}
-        <Row gutter={[16, 16]}>
-          <Col xs={24} xl={10}>
-            <Card title={<><WarningOutlined style={{color: '#ff4d4f'}} /> Điểm nghẽn tại Bưu cục (Top 10 Tồn)</>} className="kpi-card">
-              <Table 
-                dataSource={bottlenecks} 
-                pagination={false} 
-                size="small" 
-                rowKey="name"
-                columns={[
-                  { title: 'Bưu cục (BCVH)', dataIndex: 'name', render: t => <Text strong>{t}</Text> },
-                  { title: 'Tồn phát', dataIndex: 'backlog', render: v => <Badge count={v} style={{backgroundColor: v > 5 ? '#f5222d' : '#1890ff'}} /> },
-                  { title: 'Quá SLA', dataIndex: 'sla', render: v => <Tag color={v > 0 ? "red" : "green"}>{v}</Tag> }
-                ]}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} xl={14}>
-            <Card title={<><SearchOutlined /> Action Center: Danh sách đơn VIP lỗi SLA</>} className="kpi-card">
-              <Table 
-                dataSource={slaList} 
-                rowKey="id" 
-                size="small" 
-                pagination={{pageSize: 8}}
-                columns={[
-                  { title: 'Số hiệu', dataIndex: 'id', width: 140 },
-                  { title: 'Aging', dataIndex: 'aging', render: v => <Tag color="red" className="font-bold">{v} ngày</Tag> },
-                  { title: 'BCVH', dataIndex: 'bcvh' },
-                  { title: 'Vị trí cuối', dataIndex: 'lastPos', ellipsis: true },
-                ]}
-              />
-            </Card>
-          </Col>
-        </Row>
-      </Content>
-    </Layout>
+            <Col span={24}>
+              <div className="p-4 rounded-lg" style={{ background: COLORS.card, border: '1px solid rgba(255,255,255,0.1)' }}>
+                <Title level={5} style={{ color: 'white', marginBottom: 16 }}>🛡️ Action Center (SLA Risk Management)</Title>
+                <Table 
+                  dataSource={slaRisk} 
+                  size="small"
+                  pagination={{ pageSize: 5 }}
+                  columns={[
+                    { title: 'MÃ BƯU GỬI', dataIndex: 'tracking_id' },
+                    { title: 'TỈNH PHÁT', dataIndex: 'province' },
+                    { title: 'BƯU CỤC VẬN HÀNH', dataIndex: 'post_office_name' },
+                    { title: 'TUỔI ĐƠN', dataIndex: 'aging', render: v => <Tag color="error">{v} NGÀY</Tag> },
+                    { title: 'HÀNH ĐỘNG', render: () => <Button size="small" ghost type="primary">Xử lý ngay</Button> }
+                  ]}
+                />
+              </div>
+            </Col>
+          </Row>
+        </Content>
+
+        <style>{`
+          .ant-table { background: transparent !important; color: white !important; }
+          .ant-table-thead > tr > th { background: rgba(255,255,255,0.05) !important; color: rgba(255,255,255,0.6) !important; border-bottom: 1px solid rgba(255,255,255,0.1) !important; }
+          .ant-table-tbody > tr > td { border-bottom: 1px solid rgba(255,255,255,0.05) !important; }
+          .ant-table-cell { color: white !important; }
+          .ant-pagination-item a { color: white !important; }
+        `}</style>
+      </Layout>
+    </ErrorBoundary>
   );
 };
 
