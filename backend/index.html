@@ -27,9 +27,6 @@
         .card-inner { padding: 20px; }
         .kpi-value { font-size: 32px; font-weight: 700; color: var(--primary); line-height: 1.1; }
         .kpi-label { font-size: 10px; text-transform: uppercase; color: var(--text-sub); letter-spacing: 1px; margin-bottom: 6px; font-weight: 600; }
-        
-        .direction-card { background: #f1f5f9; border-radius: 8px; padding: 12px; border-left: 4px solid var(--primary); }
-        
         .ant-table-thead > tr > th { 
             background: var(--primary-dark) !important; 
             color: #ffffff !important; 
@@ -49,7 +46,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, Component } = React;
-        const { Layout, Row, Col, Table, Tag, Progress, Button, message, Space, Typography, Badge, Modal, Result, Empty, Card, Statistic } = window.antd;
+        const { Layout, Row, Col, Table, Tag, Progress, Button, message, Space, Typography, Badge, Modal, Result, Empty, Statistic } = window.antd;
         const { Text, Title } = Typography;
         
         const getPerformanceColor = (rate) => {
@@ -86,9 +83,36 @@
 
             useEffect(() => { fetchAll(); }, []);
 
+            const handleUpload = async () => {
+                const input = document.createElement('input');
+                input.type = 'file'; input.accept = '.xlsx';
+                input.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const formData = new FormData(); 
+                    formData.append('file', file);
+                    const hide = message.loading('Đang thẩm định dữ liệu chuẩn hóa...', 0);
+                    try {
+                        const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: formData });
+                        if (res.ok) { message.success("Verification Success!"); fetchAll(); }
+                        else { 
+                            const j = await res.json(); 
+                            Modal.error({ title: 'Import Failure', content: j.detail || 'Lỗi cấu trúc Excel' }); 
+                        }
+                    } catch (err) { message.error("Network Error"); }
+                    finally { hide(); }
+                };
+                input.click();
+            };
+
             if (loading && !data) return <div style={{padding: 100, textAlign: 'center', background: '#f8fafc', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#003a8c" /><p style={{marginTop: 16, color: '#64748b'}}>Đang khởi động COMMAND CENTER...</p></div>;
 
-            if (!data) return <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống Điều hành" extra={<Button type="primary" onClick={() => window.location.reload()}>LOAD DATA</Button>} /></div>;
+            if (!data) return (
+                <Layout style={{minHeight: '100vh', background: '#f8fafc'}}>
+                    <div className="header"><div className="nav-brand">VNPOST HUẾ <span style={{color: '#f97316'}}>D.O.C</span></div></div>
+                    <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống Điều hành" subTitle="Sẵn sàng thẩm định File chuẩn hóa mới." extra={<Button type="primary" size="large" onClick={handleUpload} style={{background: '#003a8c'}}>IMPORT DỮ LIỆU</Button>} /></div>
+                </Layout>
+            );
 
             const nRate = data.directions.north.total > 0 ? Math.round(data.directions.north.success * 100 / data.directions.north.total) : 0;
             const sRate = data.directions.south.total > 0 ? Math.round(data.directions.south.success * 100 / data.directions.south.total) : 0;
@@ -97,7 +121,7 @@
                 <Layout style={{minHeight: '100vh', background: '#f8fafc'}}>
                     <div className="header">
                         <div className="nav-brand">VNPOST HUẾ <span style={{color: '#f97316'}}>D.O.C</span></div>
-                        <Space><Button type="primary" onClick={() => window.location.reload()} style={{background: '#003a8c'}}>IMPORT MỚI</Button> <Button icon={<span>🔄</span>} onClick={fetchAll} /></Space>
+                        <Space><Button type="primary" onClick={handleUpload} style={{background: '#003a8c'}}>NHẬP DỮ LIỆU MỚI</Button> <Button icon={<span>🔄</span>} onClick={fetchAll} /></Space>
                     </div>
 
                     <div className="main-container">
@@ -108,14 +132,13 @@
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #f59e0b'}}><div className="card-inner"><div className="kpi-label">Tồn xử lý</div><div className="kpi-value" style={{color: '#f59e0b'}}>{(data.kpis.pending).toLocaleString()}</div></div></div></Col>
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #ef4444'}}><div className="card-inner"><div className="kpi-label">Vi phạm SLA</div><div className="kpi-value" style={{color: '#ef4444'}}>{(data.kpis.sla).toLocaleString()}</div></div></div></Col>
 
-                            {/* DIRECTIONAL PANEL */}
                             <Col span={12}>
                                 <div className="executive-card">
                                     <div className="section-header"><div className="section-indicator"></div><div className="section-title">Trục Điều hành Hướng Bắc</div></div>
                                     <div className="card-inner">
                                         <Row gutter={16}>
                                             <Col span={12}><Statistic title="Sản lượng" value={data.directions.north.total} /></Col>
-                                            <Col span={12}><Statistic title="Tỷ lệ Thành công" value={nRate} suffix="%" valueStyle={{ color: getPerformanceColor(nRate) }} /></Col>
+                                            <Col span={12}><Statistic title="Thành công (%)" value={nRate} suffix="%" valueStyle={{ color: getPerformanceColor(nRate) }} /></Col>
                                         </Row>
                                         <Progress percent={nRate} strokeColor={getPerformanceColor(nRate)} style={{marginTop: 12}} />
                                     </div>
@@ -127,7 +150,7 @@
                                     <div className="card-inner">
                                         <Row gutter={16}>
                                             <Col span={12}><Statistic title="Sản lượng" value={data.directions.south.total} /></Col>
-                                            <Col span={12}><Statistic title="Tỷ lệ Thành công" value={sRate} suffix="%" valueStyle={{ color: getPerformanceColor(sRate) }} /></Col>
+                                            <Col span={12}><Statistic title="Thành công (%)" value={sRate} suffix="%" valueStyle={{ color: getPerformanceColor(sRate) }} /></Col>
                                         </Row>
                                         <Progress percent={sRate} strokeColor={getPerformanceColor(sRate)} style={{marginTop: 12}} />
                                     </div>
