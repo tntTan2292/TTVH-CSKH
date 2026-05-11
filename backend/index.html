@@ -4,12 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V2.1</title>
+    <!-- CORE LIBRARIES -->
     <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prop-types@15.8.1/prop-types.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/recharts@2.10.3/umd/Recharts.js"></script>
+    <!-- UI LIBRARIES -->
     <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/antd@5.12.2/dist/antd.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antd@5.12.2/dist/reset.css">
-    <script src="https://cdn.jsdelivr.net/npm/recharts@2.10.3/umd/Recharts.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.5/babel.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -78,28 +81,12 @@
 
             useEffect(() => { fetchAll(); }, []);
 
-            const handleUpload = async () => {
-                const input = document.createElement('input');
-                input.type = 'file'; input.accept = '.xlsx';
-                input.onchange = async (e) => {
-                    const formData = new FormData(); formData.append('file', e.target.files[0]);
-                    const hide = message.loading('Đang khởi tạo Snapshot V2.1...', 0);
-                    try {
-                        const res = await fetch(`http://localhost:8010/upload`, { method: 'POST', body: formData });
-                        if (res.ok) { message.success("Snapshot Ready!"); fetchAll(); }
-                        else { const j = await res.json(); Modal.error({ title: 'Mapping Error', content: j.detail }); }
-                    } catch (err) { message.error("Lỗi mạng khi Import"); }
-                    finally { hide(); }
-                };
-                input.click();
-            };
-
             if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#000c17', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#fadb14" /><p style={{color: 'white', marginTop: 16}}>SYNCING EXECUTIVE PANEL...</p></div>;
 
             if (!stats) return (
                 <Layout style={{minHeight: '100vh', background: 'var(--bg)'}}>
                     <div className="header"><Title level={4} style={{color: 'white', margin: 0}}>VNPOST HUE DOC</Title></div>
-                    <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title={<span style={{color: 'white'}}>Executive System Ready</span>} subTitle={<span style={{color: 'rgba(255,255,255,0.5)'}}>Vui lòng nạp Snapshot Logistics để bắt đầu điều hành.</span>} extra={<Button type="primary" size="large" onClick={handleUpload} style={{background: 'var(--accent)', color: 'black', border: 'none'}}>IMPORT DỮ LIỆU</Button>} /></div>
+                    <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title={<span style={{color: 'white'}}>Executive System Ready</span>} subTitle={<span style={{color: 'rgba(255,255,255,0.5)'}}>Vui lòng nạp Snapshot Logistics để bắt đầu điều hành.</span>} extra={<Button type="primary" size="large" onClick={() => window.location.reload()} style={{background: 'var(--accent)', color: 'black', border: 'none'}}>IMPORT DỮ LIỆU</Button>} /></div>
                 </Layout>
             );
 
@@ -118,7 +105,6 @@
                             <Tag color="gold" style={{background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', fontSize: 10}}>DATASET ACTIVE</Tag>
                         </Space>
                         <Space>
-                            <Button type="primary" onClick={handleUpload} style={{background: 'var(--accent)', color: 'black', fontWeight: 700, border: 'none'}}>NHẬP DỮ LIỆU</Button>
                             <Button icon={<span>🔄</span>} onClick={fetchAll} ghost />
                         </Space>
                     </div>
@@ -152,12 +138,12 @@
                                                     <XAxis type="number" hide />
                                                     <YAxis dataKey="name" type="category" tick={{fill: 'rgba(255,255,255,0.7)', fontSize: 10}} width={140} />
                                                     <ReTooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{background: '#001529', border: '1px solid var(--accent)', color: 'white'}} />
-                                                    <Bar dataKey="rate" radius={[0, 4, 4, 0]}>
+                                                    <Bar dataKey="rate" radius={[0, 4, 4, 0]} isAnimationActive={false}>
                                                         {provinceChartData.map((e, i) => <Cell key={i} fill={e.rate > 85 ? '#52c41a' : '#faad14'} />)}
                                                     </Bar>
                                                 </BarChart>
                                             </ResponsiveContainer>
-                                        ) : <div style={{padding: 50, textAlign: 'center', color: 'rgba(255,255,255,0.4)'}}><Empty description="Không có dữ liệu đồ thị" /></div>}
+                                        ) : <div style={{padding: 50, textAlign: 'center', color: 'rgba(255,255,255,0.4)'}}><Empty description="Chưa có dữ liệu đồ thị" /></div>}
                                     </div>
                                 </div>
                             </Col>
