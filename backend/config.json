@@ -3,7 +3,7 @@
     "REQUIRED_COLUMNS": {
         "tracking_id": "Số hiệu",
         "result_final": "Kết quả phát",
-        "province": "Tỉnh phát",
+        "province": "Tỉnh",
         "acceptance_date": "Ngày chấp nhận",
         "post_office": "BCVH",
         "address": "Địa chỉ"
