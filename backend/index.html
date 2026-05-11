@@ -18,7 +18,8 @@
         .header { background: var(--primary); padding: 12px 24px; border-bottom: 2px solid var(--accent); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; }
         .main-container { padding: 16px; max-width: 1920px; margin: 0 auto; }
         .executive-card { background: var(--card-bg); border-radius: 8px; padding: 16px; border: 1px solid rgba(255,255,255,0.1); height: 100%; min-height: 100px; }
-        .kpi-value { font-size: 32px; font-weight: 700; color: var(--accent); line-height: 1.2; }
+        .kpi-value { font-size: 32px; font-weight: 700; color: var(--accent); line-height: 1.1; }
+        .kpi-sub-value { font-size: 13px; font-weight: 400; color: rgba(255,255,255,0.6); margin-top: 4px; }
         .kpi-label { font-size: 11px; text-transform: uppercase; color: rgba(255,255,255,0.5); letter-spacing: 1px; margin-bottom: 8px; }
         .ant-table { background: transparent !important; color: white !important; }
         .ant-table-thead > tr > th { background: rgba(255,255,255,0.05) !important; color: rgba(255,255,255,0.6) !important; border-bottom: 1px solid rgba(255,255,255,0.1) !important; font-size: 11px; }
@@ -33,7 +34,7 @@
         const { useState, useEffect, Component } = React;
         const { Layout, Row, Col, Table, Tag, Progress, Button, message, Space, Typography, Badge, Modal, Result, Empty } = window.antd;
         const { Text, Title } = Typography;
-        const { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar, Tooltip: ReTooltip } = window.Recharts || {};
+        const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip: ReTooltip, Legend, Cell } = window.Recharts || {};
         const API_BASE = "http://localhost:8010/api/dashboard";
 
         class ErrorBoundary extends Component {
@@ -50,40 +51,26 @@
             const [bcvhData, setBcvhData] = useState([]);
             const [bottlenecks, setBottlenecks] = useState([]);
             const [slaRisk, setSlaRisk] = useState([]);
-            const [radarChartData, setRadarChartData] = useState([]);
+            const [provinceData, setProvinceData] = useState([]);
             const [loading, setLoading] = useState(true);
 
             const fetchAll = async () => {
                 setLoading(true);
                 try {
-                    const [s, b, n, r, radar] = await Promise.all([
+                    const [s, b, n, r, p] = await Promise.all([
                         fetch(`${API_BASE}/stats`).then(res => res.json()),
                         fetch(`${API_BASE}/bcvh-summary`).then(res => res.json()),
                         fetch(`${API_BASE}/bcvh-bottleneck`).then(res => res.json()),
                         fetch(`${API_BASE}/sla-risk`).then(res => res.json()),
-                        fetch(`${API_BASE}/radar`).then(res => res.json())
+                        fetch(`${API_BASE}/province-performance`).then(res => res.json())
                     ]);
                     
                     setStats(s && !s.error ? s : null);
                     setBcvhData(Array.isArray(b) ? b : []);
                     setBottlenecks(Array.isArray(n) ? n : []);
                     setSlaRisk(Array.isArray(r) ? r : []);
-
-                    // BẮT BUỘC: Radar Adapter & Console Logging
-                    console.log("RADAR_RAW_API_RESPONSE:", radar);
-                    if (radar && radar.labels && radar.datasets?.[0]?.data) {
-                        const transformed = radar.labels.map((label, idx) => ({
-                            subject: label,
-                            A: radar.datasets[0].data[idx]
-                        }));
-                        console.log("RADAR_TRANSFORMED_FOR_RECHARTS:", transformed);
-                        setRadarChartData(transformed);
-                    } else {
-                        setRadarChartData([]);
-                    }
-
+                    setProvinceData(Array.isArray(p) ? p : []);
                 } catch (err) { 
-                    console.error("Connectivity Failure:", err);
                     message.error("Mất kết nối Enterprise Backend 8010"); 
                 } finally { setLoading(false); }
             };
@@ -106,7 +93,7 @@
                 input.click();
             };
 
-            if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#000c17', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#fadb14" /><p style={{color: 'white', marginTop: 16}}>Đang thẩm định Operational Layer...</p></div>;
+            if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#000c17', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#fadb14" /><p style={{color: 'white', marginTop: 16}}>Đang chuẩn bị Operational Panel...</p></div>;
 
             if (!stats) return (
                 <Layout style={{minHeight: '100vh', background: 'var(--bg)'}}>
@@ -114,6 +101,8 @@
                     <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title={<span style={{color: 'white'}}>Executive System Ready</span>} subTitle={<span style={{color: 'rgba(255,255,255,0.5)'}}>Chưa ghi nhận Snapshot. Vui lòng nạp dữ liệu Logistics.</span>} extra={<Button type="primary" size="large" onClick={handleUpload} style={{background: 'var(--accent)', color: 'black', border: 'none'}}>BẮT ĐẦU IMPORT</Button>} /></div>
                 </Layout>
             );
+
+            const successRate = stats ? ((stats.kpis.success / stats.kpis.total) * 100).toFixed(1) : 0;
 
             return (
                 <ErrorBoundary>
@@ -132,11 +121,20 @@
                     <div className="main-container">
                         <Row gutter={[16, 16]}>
                             <Col span={6}><div className="executive-card"><div className="kpi-label">Tổng sản lượng</div><div className="kpi-value">{(stats?.kpis?.total ?? 0).toLocaleString()}</div></div></Col>
-                            <Col span={6}><div className="executive-card"><div className="kpi-label">Phát thành công</div><div className="kpi-value" style={{color: '#52c41a'}}>{(stats?.kpis?.success ?? 0).toLocaleString()}</div><Progress percent={Math.round((stats?.kpis?.success ?? 0)*100/(stats?.kpis?.total ?? 1))} size="small" strokeColor="#52c41a" trailColor="rgba(255,255,255,0.1)" /></div></Col>
+                            
+                            <Col span={6}>
+                                <div className="executive-card">
+                                    <div className="kpi-label">Phát thành công</div>
+                                    <div className="kpi-value" style={{color: '#52c41a'}}>{(stats?.kpis?.success ?? 0).toLocaleString()}</div>
+                                    <div className="kpi-sub-value">{successRate}% Success Rate</div>
+                                    <Progress percent={parseFloat(successRate)} size="small" strokeColor="#52c41a" trailColor="rgba(255,255,255,0.1)" showInfo={false} />
+                                </div>
+                            </Col>
+
                             <Col span={6}><div className="executive-card"><div className="kpi-label">Tồn đang xử lý</div><div className="kpi-value" style={{color: '#faad14'}}>{(stats?.kpis?.pending ?? 0).toLocaleString()}</div></div></Col>
                             <Col span={6}><div className="executive-card" style={{borderColor: 'var(--danger)'}}><div className="kpi-label">Vi phạm SLA</div><div className="kpi-value" style={{color: 'var(--danger)'}}>{(stats?.kpis?.sla ?? 0).toLocaleString()}</div></div></Col>
 
-                            <Col span={12}>
+                            <Col span={14}>
                                 <div className="executive-card">
                                     <Title level={5} style={{color: 'white', marginBottom: 16}}>📊 Hiệu suất Bưu cục Vận hành (BCVH)</Title>
                                     <Table dataSource={bcvhData || []} columns={[
@@ -149,32 +147,25 @@
                                 </div>
                             </Col>
 
-                            <Col span={6}>
+                            <Col span={10}>
                                 <div className="executive-card">
-                                    <Title level={5} style={{color: 'white', marginBottom: 16}}>🎯 Radar Snapshot</Title>
-                                    <div style={{height: 300}}>
-                                        {ResponsiveContainer && radarChartData.length > 0 ? (
+                                    <Title level={5} style={{color: 'white', marginBottom: 16}}>📈 Hiệu suất theo Tỉnh phát</Title>
+                                    <div style={{height: 330}}>
+                                        {ResponsiveContainer && provinceData.length > 0 ? (
                                             <ResponsiveContainer width="100%" height="100%">
-                                                <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarChartData}>
-                                                    <PolarGrid stroke="rgba(255,255,255,0.1)" />
-                                                    <PolarAngleAxis dataKey="subject" tick={{fontSize: 9, fill: 'rgba(255,255,255,0.5)'}} />
-                                                    <Radar name="Hiệu suất" dataKey="A" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.5} />
-                                                    <ReTooltip contentStyle={{background: '#001529', border: '1px solid var(--accent)', color: 'white'}} />
-                                                </RadarChart>
+                                                <BarChart data={provinceData} layout="vertical" margin={{ left: 40, right: 30 }}>
+                                                    <XAxis type="number" hide />
+                                                    <YAxis dataKey="province" type="category" tick={{fill: 'white', fontSize: 10}} width={100} />
+                                                    <ReTooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{background: '#001529', border: '1px solid var(--accent)', color: 'white'}} />
+                                                    <Bar dataKey="rate" name="Tỷ lệ thành công (%)" radius={[0, 4, 4, 0]}>
+                                                        {provinceData.map((entry, index) => (
+                                                            <Cell key={`cell-${index}`} fill={entry.rate > 80 ? '#52c41a' : '#faad14'} />
+                                                        ))}
+                                                    </Bar>
+                                                </BarChart>
                                             </ResponsiveContainer>
-                                        ) : <Empty description="Radar Data Missing" style={{marginTop: 50}} />}
+                                        ) : <div style={{padding: 50, textAlign: 'center', color: 'rgba(255,255,255,0.5)'}}>Không có dữ liệu tỉnh phát</div>}
                                     </div>
-                                </div>
-                            </Col>
-
-                            <Col span={6}>
-                                <div className="executive-card">
-                                    <Title level={5} style={{color: 'white', marginBottom: 16}}>⚠️ Điểm nghẽn tồn đọng</Title>
-                                    <Table dataSource={bottlenecks || []} columns={[
-                                        { title: 'BƯU CỤC', dataIndex: 'name', key: 'name' },
-                                        { title: 'TỒN', dataIndex: 'backlog', key: 'backlog', align: 'right', render: (v) => <span style={{color: 'var(--accent)', fontWeight: 700}}>{v}</span> },
-                                        { title: 'MAX AGING', dataIndex: 'max_aging', key: 'max_aging', align: 'right', render: (v) => <span>{v}d</span> }
-                                    ]} pagination={false} size="small" />
                                 </div>
                             </Col>
 

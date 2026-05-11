@@ -56,7 +56,7 @@ init_db()
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"--- [FINAL FIX] START IMPORT: {file.filename} ---")
+    log_terminal(f"--- [EXECUTIVE UPDATE] START IMPORT: {file.filename} ---")
     session_id = None
     file_path = os.path.join(UPLOAD_DIR, f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
     try:
@@ -78,15 +78,11 @@ async def upload_excel(file: UploadFile = File(...)):
             df = pd.read_excel(xls, sheet_name=target_sheet, header=header_row_idx)
             df.columns = [clean_text(h) for h in df.columns]
 
-        # 3. CHỐT HẠ MAPPING LOGIC
         headers_lower = [h.lower() for h in df.columns]
-        
         def find_best_col(target_keywords, exclude_keywords=[]):
-            # Ưu tiên khớp chính xác hoặc có từ khóa quan trọng nhất (như "cuối cùng")
             for i, h in enumerate(headers_lower):
                 if any(tk in h for tk in target_keywords):
-                    if not any(ek in h for ek in exclude_keywords):
-                        return i
+                    if not any(ek in h for ek in exclude_keywords): return i
             return None
 
         mapping = {
@@ -98,11 +94,8 @@ async def upload_excel(file: UploadFile = File(...)):
             "address": find_best_col(["địa chỉ"], ["mã"])
         }
 
-        log_terminal(f"FINAL MAPPING DETECTED: {mapping}")
-        
-        # Validation
-        for k in ["tracking_id", "result_final", "post_office"]:
-            if mapping[k] is None: raise Exception(f"Thiếu cột bắt buộc: {k}")
+        if any(mapping[k] is None for k in ["tracking_id", "result_final", "post_office"]):
+            raise Exception("Thiếu cột bắt buộc để định danh Logistics")
 
         df = df.drop_duplicates(subset=[df.columns[mapping["tracking_id"]]], keep='last')
         customer_info = clean_text(df_raw_10.iloc[0, 0])
@@ -115,43 +108,26 @@ async def upload_excel(file: UploadFile = File(...)):
             cursor.execute("BEGIN TRANSACTION")
             cursor.execute('INSERT INTO import_sessions (filename, imported_at, total_rows, status) VALUES (?, ?, ?, ?)', (file.filename, datetime.now().isoformat(), len(df), "PROCESSING"))
             session_id = cursor.lastrowid
-            
             processed_orders = []
             success_count = 0
             now = datetime.now()
-            
             for _, row in df.iterrows():
                 tid = clean_text(row.iloc[mapping["tracking_id"]])
                 if not tid: continue
-                
                 res_val = clean_text(row.iloc[mapping["result_final"]]).lower()
                 is_success = any(k in res_val for k in CONFIG["SUCCESS_KEYWORDS"]) and not any(k in res_val for k in CONFIG["FAIL_KEYWORDS"])
                 if is_success: success_count += 1
-                
                 aging = 0
                 try:
                     acc_val = row.iloc[mapping["acceptance_date"]]
                     if not pd.isna(acc_val): aging = (now - pd.to_datetime(acc_val)).days
                 except: pass
-
-                processed_orders.append((
-                    tid, customer_id, 
-                    clean_text(row.iloc[mapping["address"]]) if mapping["address"] is not None else "", 
-                    clean_text(row.iloc[mapping["post_office"]]), 
-                    clean_text(row.iloc[mapping["province"]]) if mapping["province"] is not None else "", 
-                    str(row.iloc[mapping["acceptance_date"]]), 
-                    clean_text(row.iloc[mapping["result_final"]]), 
-                    'Thành công' if is_success else 'Chưa thành công', 
-                    max(0, int(aging)), (aging > CONFIG["SLA_THRESHOLD_DAYS"] and not is_success), 
-                    session_id
-                ))
+                processed_orders.append((tid, customer_id, clean_text(row.iloc[mapping["address"]]) if mapping["address"] is not None else "", clean_text(row.iloc[mapping["post_office"]]), clean_text(row.iloc[mapping["province"]]) if mapping["province"] is not None else "", str(row.iloc[mapping["acceptance_date"]]), clean_text(row.iloc[mapping["result_final"]]), 'Thành công' if is_success else 'Chưa thành công', max(0, int(aging)), (aging > CONFIG["SLA_THRESHOLD_DAYS"] and not is_success), session_id))
 
             cursor.execute('UPDATE import_sessions SET unique_ids = ?, success_count = ?, status = ? WHERE session_id = ?', (len(processed_orders), success_count, "SUCCESS", session_id))
             cursor.execute("INSERT OR REPLACE INTO customers (customer_id, customer_name, last_import) VALUES (?, ?, ?)", (customer_id, customer_name, datetime.now().isoformat()))
             cursor.executemany('INSERT OR REPLACE INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?)', processed_orders)
             cursor.execute("COMMIT")
-            
-            log_terminal(f"SUCCESS! Session {session_id}, Count = {success_count} (Should be 256)")
             return {"message": "Success", "session_id": session_id}
         except Exception as e:
             cursor.execute("ROLLBACK")
@@ -163,30 +139,21 @@ async def upload_excel(file: UploadFile = File(...)):
     finally:
         if os.path.exists(file_path): os.remove(file_path)
 
-@app.get("/api/dashboard/radar")
-async def get_radar_data():
+@app.get("/api/dashboard/province-performance")
+async def get_province_performance():
     conn = get_db_conn()
     cursor = conn.cursor()
     session = cursor.execute("SELECT session_id FROM import_sessions WHERE status='SUCCESS' ORDER BY session_id DESC LIMIT 1").fetchone()
-    if not session: return {"labels": [], "datasets": []}
+    if not session: return []
     sid = session['session_id']
     rows = cursor.execute('''
-        SELECT province as grp, COUNT(*) as total, 
+        SELECT province, COUNT(*) as total, 
         SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success 
         FROM orders WHERE session_id = ? AND province != '' AND province IS NOT NULL
         GROUP BY province ORDER BY total DESC LIMIT 8
     ''', (sid,)).fetchall()
-    if not rows or len(rows) < 2:
-        rows = cursor.execute('''
-            SELECT post_office_name as grp, COUNT(*) as total, 
-            SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success 
-            FROM orders WHERE session_id = ? 
-            GROUP BY post_office_name ORDER BY total DESC LIMIT 8
-        ''', (sid,)).fetchall()
-    labels = [r['grp'][:15] for r in rows]
-    data = [round(r['success']*100/r['total']) if r['total']>0 else 0 for r in rows]
     conn.close()
-    return {"labels": labels, "datasets": [{"label": "Hiệu suất (%)", "data": data}]}
+    return [{"province": r['province'], "total": r['total'], "success": r['success'], "rate": round(r['success']*100/r['total']) if r['total']>0 else 0} for r in rows]
 
 @app.get("/api/dashboard/stats")
 async def get_stats():
