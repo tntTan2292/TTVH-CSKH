@@ -17,16 +17,16 @@
         body { margin: 0; font-family: 'Outfit', sans-serif; background: var(--bg); color: var(--text); overflow-x: hidden; }
         .header { background: var(--primary); padding: 12px 24px; border-bottom: 2px solid var(--accent); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; }
         .main-container { padding: 16px; max-width: 1920px; margin: 0 auto; }
-        .executive-card { background: var(--card-bg); border-radius: 8px; padding: 16px; border: 1px solid rgba(255,255,255,0.1); height: 100%; min-height: 100px; transition: transform 0.2s; }
-        .executive-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+        .executive-card { background: var(--card-bg); border-radius: 8px; padding: 16px; border: 1px solid rgba(255,255,255,0.1); height: 100%; min-height: 100px; }
         .kpi-value { font-size: 38px; font-weight: 700; color: var(--accent); line-height: 1.1; }
         .kpi-sub-value { font-size: 14px; font-weight: 600; color: #52c41a; margin-top: 4px; }
         .kpi-label { font-size: 11px; text-transform: uppercase; color: rgba(255,255,255,0.4); letter-spacing: 1.5px; margin-bottom: 8px; }
         .ant-table { background: transparent !important; color: white !important; }
-        .ant-table-thead > tr > th { background: rgba(255,255,255,0.05) !important; color: rgba(255,255,255,0.5) !important; border-bottom: 1px solid rgba(255,255,255,0.1) !important; font-size: 10px; text-transform: uppercase; }
+        .ant-table-thead > tr > th { background: rgba(255,255,255,0.05) !important; color: rgba(255,255,255,0.5) !important; border-bottom: 1px solid rgba(255,255,255,0.1) !important; font-size: 10px; }
         .ant-table-tbody > tr > td { border-bottom: 1px solid rgba(255,255,255,0.05) !important; font-size: 12px; }
         .ant-table-cell { color: white !important; }
-        .version-tag { background: #52c41a; color: black; font-weight: 900; padding: 2px 10px; border-radius: 4px; font-size: 10px; margin-left: 12px; letter-spacing: 0.5px; }
+        .version-tag { background: #52c41a; color: black; font-weight: 900; padding: 2px 10px; border-radius: 4px; font-size: 10px; margin-left: 12px; animation: blink 2s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
@@ -72,41 +72,28 @@
                     setBottlenecks(Array.isArray(n) ? n : []);
                     setSlaRisk(Array.isArray(r) ? r : []);
 
-                    // GOVERNANCE: Province Adapter
-                    if (p_raw && p_raw.labels && p_raw.datasets?.[0]?.data) {
+                    console.log("RAW PROVINCE FROM API:", p_raw);
+
+                    if (p_raw && p_raw.labels && p_raw.datasets && p_raw.datasets[0]) {
                         const transformed = p_raw.labels.map((label, idx) => ({
                             name: label,
                             rate: p_raw.datasets[0].data[idx]
                         }));
+                        console.log("TRANSFORMED DATA FOR RECHARTS:", transformed);
                         setProvinceChartData(transformed);
                     } else {
+                        console.warn("PROVINCE DATA STRUCTURE INVALID:", p_raw);
                         setProvinceChartData([]);
                     }
-
                 } catch (err) { 
+                    console.error("FETCH ERROR:", err);
                     message.error("Connectivity Failure: 8010"); 
                 } finally { setLoading(false); }
             };
 
             useEffect(() => { fetchAll(); }, []);
 
-            const handleUpload = async () => {
-                const input = document.createElement('input');
-                input.type = 'file'; input.accept = '.xlsx';
-                input.onchange = async (e) => {
-                    const formData = new FormData(); formData.append('file', e.target.files[0]);
-                    const hide = message.loading('Đang khởi tạo Snapshot V2.0...', 0);
-                    try {
-                        const res = await fetch(`http://localhost:8010/upload`, { method: 'POST', body: formData });
-                        if (res.ok) { message.success("Snapshot Ready!"); fetchAll(); }
-                        else { const j = await res.json(); Modal.error({ title: 'Mapping Error', content: j.detail }); }
-                    } catch (err) { message.error("Network Error during Import"); }
-                    finally { hide(); }
-                };
-                input.click();
-            };
-
-            if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#000c17', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#fadb14" /><p style={{color: 'white', marginTop: 16, letterSpacing: 2}}>SYNCHRONIZING EXECUTIVE LAYER...</p></div>;
+            if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#000c17', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#fadb14" /><p style={{color: 'white', marginTop: 16}}>LOADING EXECUTIVE V2.1...</p></div>;
 
             const successRate = stats ? ((stats.kpis.success / stats.kpis.total) * 100).toFixed(1) : "0.0";
 
@@ -115,39 +102,28 @@
                 <Layout style={{minHeight: '100vh', background: 'var(--bg)'}}>
                     <div className="header">
                         <Space size="large">
-                            <Title level={4} style={{color: 'white', margin: 0, letterSpacing: 2}}>VNPOST HUE <span style={{color: 'var(--accent)', fontSize: 14}}>DOC</span><span className="version-tag">V2.0 - OPERATIONAL MODE</span></Title>
-                            <Tag color="gold" style={{background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', fontSize: 10}}>DATASET V{stats?.session_info?.id ?? '0'}</Tag>
+                            <Title level={4} style={{color: 'white', margin: 0, letterSpacing: 2}}>VNPOST HUE <span style={{color: 'var(--accent)', fontSize: 14}}>DOC</span><span className="version-tag">V2.1 - SYNC SUCCESS</span></Title>
+                            <Tag color="gold" style={{background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', fontSize: 10}}>ACTIVE DATASET</Tag>
                         </Space>
                         <Space>
-                            <Button type="primary" onClick={handleUpload} style={{background: 'var(--accent)', color: 'black', fontWeight: 700, border: 'none', height: 40}}>IMPORT EXCEL</Button>
-                            <Button icon={<span>🔄</span>} onClick={fetchAll} ghost style={{height: 40}} />
+                            <Button type="primary" onClick={() => window.location.reload()} style={{background: 'var(--accent)', color: 'black', fontWeight: 700, border: 'none', height: 40}}>RELOAD DASHBOARD</Button>
                         </Space>
                     </div>
 
                     <div className="main-container">
                         <Row gutter={[16, 16]}>
                             <Col span={6}><div className="executive-card"><div className="kpi-label">Tổng sản lượng</div><div className="kpi-value">{(stats?.kpis?.total ?? 0).toLocaleString()}</div></div></Col>
-                            
-                            <Col span={6}>
-                                <div className="executive-card" style={{borderLeft: '5px solid #52c41a'}}>
-                                    <div className="kpi-label">Phát thành công</div>
-                                    <div className="kpi-value" style={{color: '#52c41a'}}>{(stats?.kpis?.success ?? 0).toLocaleString()}</div>
-                                    <div className="kpi-sub-value">{successRate}% Success Rate</div>
-                                    <Progress percent={parseFloat(successRate)} size="small" strokeColor="#52c41a" trailColor="rgba(255,255,255,0.1)" showInfo={false} style={{marginTop: 10}} />
-                                </div>
-                            </Col>
-
+                            <Col span={6}><div className="executive-card" style={{borderLeft: '5px solid #52c41a'}}><div className="kpi-label">Phát thành công</div><div className="kpi-value" style={{color: '#52c41a'}}>{(stats?.kpis?.success ?? 0).toLocaleString()}</div><div className="kpi-sub-value">{successRate}% Success Rate</div><Progress percent={parseFloat(successRate)} size="small" strokeColor="#52c41a" trailColor="rgba(255,255,255,0.1)" showInfo={false} style={{marginTop: 10}} /></div></Col>
                             <Col span={6}><div className="executive-card"><div className="kpi-label">Tồn đang xử lý</div><div className="kpi-value" style={{color: '#faad14'}}>{(stats?.kpis?.pending ?? 0).toLocaleString()}</div></div></Col>
                             <Col span={6}><div className="executive-card" style={{borderColor: 'var(--danger)'}}><div className="kpi-label">Vi phạm SLA</div><div className="kpi-value" style={{color: 'var(--danger)'}}>{(stats?.kpis?.sla ?? 0).toLocaleString()}</div></div></Col>
 
                             <Col span={14}>
                                 <div className="executive-card">
-                                    <Title level={5} style={{color: 'white', marginBottom: 16, fontSize: 14}}>📊 HIỆU SUẤT BCVH (BƯU CỤC VẬN HÀNH)</Title>
+                                    <Title level={5} style={{color: 'white', marginBottom: 16, fontSize: 14}}>📊 HIỆU SUẤT BCVH</Title>
                                     <Table dataSource={bcvhData || []} columns={[
                                         { title: 'BƯU CỤC', dataIndex: 'name', key: 'name' },
                                         { title: 'TỔNG', dataIndex: 'total', key: 'total', align: 'right' },
                                         { title: 'THÀNH CÔNG', dataIndex: 'success', key: 'success', align: 'right', render: (v) => <span style={{color: '#b7eb8f'}}>{v}</span> },
-                                        { title: 'SLA', dataIndex: 'sla', key: 'sla', align: 'right', render: (v) => <span style={{color: v > 0 ? 'var(--danger)' : 'inherit'}}>{v}</span> },
                                         { title: 'TỶ LỆ (%)', dataIndex: 'rate', key: 'rate', align: 'center', render: (v) => <Tag color={v > 90 ? 'green' : 'orange'} style={{fontSize: 10}}>{v}%</Tag> }
                                     ]} pagination={{pageSize: 8}} size="small" />
                                 </div>
@@ -157,7 +133,7 @@
                                 <div className="executive-card">
                                     <Title level={5} style={{color: 'white', marginBottom: 16, fontSize: 14}}>📈 HIỆU SUẤT THEO TỈNH PHÁT</Title>
                                     <div style={{height: 330}}>
-                                        {ResponsiveContainer && provinceChartData.length > 0 ? (
+                                        {provinceChartData.length > 0 ? (
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <BarChart data={provinceChartData} layout="vertical" margin={{ left: 60, right: 30 }}>
                                                     <XAxis type="number" hide />
@@ -170,7 +146,12 @@
                                                     </Bar>
                                                 </BarChart>
                                             </ResponsiveContainer>
-                                        ) : <div style={{padding: 50, textAlign: 'center', color: 'rgba(255,255,255,0.4)'}}>Không có dữ liệu tỉnh phát</div>}
+                                        ) : (
+                                            <div style={{padding: 50, textAlign: 'center'}}>
+                                                <Empty description={<span style={{color: 'rgba(255,255,255,0.4)'}}>Không có dữ liệu tỉnh phát</span>} />
+                                                <Button type="link" onClick={fetchAll}>Thử tải lại dữ liệu</Button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </Col>
@@ -182,8 +163,7 @@
                                         { title: 'MÃ BƯU GỬI', dataIndex: 'tracking_id', key: 'tracking_id' },
                                         { title: 'TỈNH PHÁT', dataIndex: 'province', key: 'province' },
                                         { title: 'BƯU CỤC VẬN HÀNH', dataIndex: 'post_office_name', key: 'post_office_name' },
-                                        { title: 'TUỔI ĐƠN', dataIndex: 'aging', key: 'aging', render: (v) => <Tag color="error" style={{fontSize: 10, fontWeight: 700}}>{v} NGÀY</Tag> },
-                                        { title: 'HÀNH ĐỘNG', key: 'action', render: () => <Button size="small" ghost type="primary" style={{fontSize: 10}}>Xử lý ngay</Button> }
+                                        { title: 'TUỔI ĐƠN', dataIndex: 'aging', key: 'aging', render: (v) => <Tag color="error" style={{fontSize: 10, fontWeight: 700}}>{v} NGÀY</Tag> }
                                     ]} pagination={{pageSize: 5}} size="small" />
                                 </div>
                             </Col>
