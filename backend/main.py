@@ -43,8 +43,19 @@ def get_db_conn():
 def init_db():
     conn = get_db_conn()
     cursor = conn.cursor()
+    # PHÁ BỎ TABLE CŨ ĐỂ CẬP NHẬT SCHEMA 12 CỘT
+    # cursor.execute("DROP TABLE IF EXISTS orders") # Chỉ chạy 1 lần nếu cần, ở đây ta sẽ dùng logic an toàn hơn
+    
     cursor.execute('''CREATE TABLE IF NOT EXISTS import_sessions (session_id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT, imported_at DATETIME, total_rows INTEGER, unique_ids INTEGER, success_count INTEGER, status TEXT)''')
     cursor.execute('CREATE TABLE IF NOT EXISTS customers (customer_id TEXT PRIMARY KEY, customer_name TEXT, last_import DATETIME)')
+    
+    # KIỂM TRA VÀ CẬP NHẬT CỘT NẾU THIẾU (MIGRATION)
+    try:
+        cursor.execute("SELECT result_first FROM orders LIMIT 1")
+    except:
+        log_terminal("SCHEMA OUTDATED: Recreating orders table...")
+        cursor.execute("DROP TABLE IF EXISTS orders")
+        
     cursor.execute('''CREATE TABLE IF NOT EXISTS orders (
         tracking_id TEXT, customer_id TEXT, recipient_address TEXT, post_office_name TEXT, province TEXT, 
         acceptance_date TEXT, result_first TEXT, result_final TEXT, status TEXT, aging INTEGER, is_sla_violation BOOLEAN, 
@@ -56,7 +67,7 @@ init_db()
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"--- [SLA LOGIC FIX] START: {file.filename} ---")
+    log_terminal(f"--- [SCHEMA SYNC] START: {file.filename} ---")
     session_id = None
     file_path = os.path.join(UPLOAD_DIR, f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
     try:
@@ -92,13 +103,6 @@ async def upload_excel(file: UploadFile = File(...)):
             "address": find_best_col(["địa chỉ"], ["mã"])
         }
 
-        # EVIDENCE LOG
-        log_terminal(f"Mapping Detected: {mapping}")
-        sample_cols = [c for c in [mapping["result_first"], mapping["result_final"], mapping["acceptance_date"]] if c is not None]
-        if sample_cols:
-            log_terminal("Sample Raw Data (First 10 rows):")
-            print(df.iloc[:10, sample_cols].to_string())
-
         df = df.drop_duplicates(subset=[df.columns[mapping["tracking_id"]]], keep='last')
         customer_info = clean_text(df_raw_10.iloc[0, 0])
         customer_id = customer_info.split('-')[0].strip() if '-' in customer_info else "UNKNOWN"
@@ -119,12 +123,10 @@ async def upload_excel(file: UploadFile = File(...)):
                 tid = clean_text(row.iloc[mapping["tracking_id"]])
                 if not tid: continue
                 
-                # SUCCESS LOGIC (FINAL RESULT)
                 res_final = clean_text(row.iloc[mapping["result_final"]]).lower() if mapping["result_final"] is not None else ""
                 is_success = "đã phát thành công" in res_final
                 if is_success: success_count += 1
                 
-                # SLA LOGIC (FIRST RESULT + AGING)
                 res_first = clean_text(row.iloc[mapping["result_first"]]).lower() if mapping["result_first"] is not None else ""
                 aging = 0
                 try:
@@ -146,7 +148,7 @@ async def upload_excel(file: UploadFile = File(...)):
                     max(0, int(aging)), is_sla_violation, session_id
                 ))
 
-            log_terminal(f"EVIDENCE -> SUCCESS: {success_count}, SLA: {sla_count}, TOTAL: {len(df)}")
+            log_terminal(f"DB SYNC -> SUCCESS: {success_count}, SLA: {sla_count}, TOTAL: {len(df)}")
             cursor.execute('UPDATE import_sessions SET unique_ids = ?, success_count = ?, status = ? WHERE session_id = ?', (len(processed_orders), success_count, "SUCCESS", session_id))
             cursor.execute("INSERT OR REPLACE INTO customers (customer_id, customer_name, last_import) VALUES (?, ?, ?)", (customer_id, customer_name, datetime.now().isoformat()))
             cursor.executemany('INSERT OR REPLACE INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', processed_orders)
