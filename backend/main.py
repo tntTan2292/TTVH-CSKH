@@ -56,7 +56,7 @@ init_db()
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"--- START IMPORT: {file.filename} ---")
+    log_terminal(f"--- [DEEP DEBUG] START IMPORT: {file.filename} ---")
     session_id = None
     file_path = os.path.join(UPLOAD_DIR, f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
     try:
@@ -76,11 +76,11 @@ async def upload_excel(file: UploadFile = File(...)):
                     break
             
             df = pd.read_excel(xls, sheet_name=target_sheet, header=header_row_idx)
+            # EVIDENCE 1: In toàn bộ detected columns
+            log_terminal(f"1. DETECTED COLUMNS: {df.columns.tolist()}")
             df.columns = [clean_text(h) for h in df.columns]
 
-        log_terminal(f"AVAILABLE COLUMNS: {list(df.columns)}")
-
-        # DYNAMIC MAPPING EVIDENCE
+        # EVIDENCE 2: Mapping Step
         mapping = {}
         headers = [h.lower() for h in df.columns]
         for key, display_name in CONFIG["REQUIRED_COLUMNS"].items():
@@ -89,9 +89,14 @@ async def upload_excel(file: UploadFile = File(...)):
                 if target in h:
                     mapping[key] = i
                     break
-            if key not in mapping: raise Exception(f"Thiếu cột bắt buộc: {display_name}")
+            if key not in mapping: 
+                log_terminal(f"   !!! MISSING COLUMN: {display_name} (Target: {target})")
+                raise Exception(f"Thiếu cột: {display_name}")
 
-        log_terminal(f"MAPPING RESULTS: {mapping}")
+        log_terminal(f"2. MAPPING FINAL: {mapping}")
+
+        # EVIDENCE 3: Sample Data
+        log_terminal(f"3. DATA SAMPLE (Top 3):\n{df.head(3).to_dict(orient='records')}")
 
         df = df.drop_duplicates(subset=[df.columns[mapping["tracking_id"]]], keep='last')
         customer_info = clean_text(df_raw.iloc[0, 0])
@@ -144,14 +149,14 @@ async def upload_excel(file: UploadFile = File(...)):
             cursor.executemany('INSERT OR REPLACE INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?)', processed_orders)
             cursor.execute("COMMIT")
             
-            log_terminal(f"IMPORT EVIDENCE: Total={len(processed_orders)}, Non-Empty Provinces={non_empty_prov}")
+            log_terminal(f"4. IMPORT EVIDENCE: Session {session_id}, Rows={len(processed_orders)}, Valid Prov={non_empty_prov}")
             return {"message": "Success", "session_id": session_id}
         except Exception as e:
             cursor.execute("ROLLBACK")
             raise e
         finally: conn.close()
     except Exception as e:
-        log_terminal(f"CRITICAL ERR: {str(e)}")
+        log_terminal(f"!!! CRITICAL ERR: {str(e)}")
         return JSONResponse(status_code=500, content={"detail": str(e)})
     finally:
         if os.path.exists(file_path): os.remove(file_path)
@@ -161,34 +166,45 @@ async def get_radar_data():
     conn = get_db_conn()
     cursor = conn.cursor()
     session = cursor.execute("SELECT session_id FROM import_sessions WHERE status='SUCCESS' ORDER BY session_id DESC LIMIT 1").fetchone()
-    if not session: return {"labels": [], "datasets": []}
+    if not session: return {"labels": ["NO_DATA"], "datasets": [{"label": "Status", "data": [0]}]}
     
     sid = session['session_id']
-    log_terminal(f"--- RADAR AGGREGATION DEBUG (SID: {sid}) ---")
+    log_terminal(f"--- [RADAR AGGREGATION DEBUG] ---")
     
-    # 1. Try Provinces with Strict Checking
+    # EVIDENCE 4: Check raw table state
+    total_db = cursor.execute("SELECT COUNT(*) FROM orders WHERE session_id = ?", (sid,)).fetchone()[0]
+    prov_db = cursor.execute("SELECT COUNT(*) FROM orders WHERE session_id = ? AND province != '' AND province IS NOT NULL", (sid,)).fetchone()[0]
+    log_terminal(f"DB State: Total={total_db}, Non-Empty Prov={prov_db}")
+    
+    # Aggregate Step
     rows = cursor.execute('''
         SELECT province as grp, COUNT(*) as total, 
         SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success 
-        FROM orders WHERE session_id = ? AND province IS NOT NULL AND province != ""
+        FROM orders WHERE session_id = ? AND province != '' AND province IS NOT NULL
         GROUP BY province ORDER BY total DESC LIMIT 8
     ''', (sid,)).fetchall()
     
-    log_terminal(f"Groups found (Province): {len(rows)}")
+    labels = [r['grp'] for r in rows]
+    data = [round(r['success']*100/r['total']) if r['total']>0 else 0 for r in rows]
     
-    if not rows or len(rows) < 3:
-        log_terminal("FALLBACK: Not enough provinces. Switching to BCVH Aggregation...")
+    # FALLBACK to BCVH if Province empty
+    if not labels or len(labels) < 2:
+        log_terminal("Fallback: Switching to BCVH Aggregation...")
         rows = cursor.execute('''
             SELECT post_office_name as grp, COUNT(*) as total, 
             SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success 
             FROM orders WHERE session_id = ? 
             GROUP BY post_office_name ORDER BY total DESC LIMIT 8
         ''', (sid,)).fetchall()
-        log_terminal(f"Groups found (BCVH): {len(rows)}")
+        labels = [r['grp'][:10] for r in rows]
+        data = [round(r['success']*100/r['total']) if r['total']>0 else 0 for r in rows]
 
-    labels = [r['grp'][:15] for r in rows]
-    data = [round(r['success']*100/r['total']) if r['total']>0 else 0 for r in rows]
-    
+    # TEMPORARY FORCE TEST: Nếu tất cả rỗng, trả dữ liệu giả để xác minh Chart UI
+    if not labels:
+        log_terminal("!!! FORCE TEST: Sending Mock Data because aggregation is EMPTY")
+        labels = ["TEST_A", "TEST_B", "TEST_C"]
+        data = [50, 80, 60]
+
     conn.close()
     log_terminal(f"FINAL RADAR LABELS: {labels}")
     log_terminal(f"FINAL RADAR DATA: {data}")
