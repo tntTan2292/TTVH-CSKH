@@ -4,7 +4,9 @@
         "tracking_id": "Số hiệu BG",
         "result_final": "Kết quả phát cuối cùng",
         "province": "Tỉnh",
-        "acceptance_date": "Ngày chấp nhận"
+        "acceptance_date": "Ngày chấp nhận",
+        "post_office": "Bưu cục",
+        "address": "Địa chỉ"
     },
     "SUCCESS_KEYWORDS": ["thành công", "đã phát"],
     "FAIL_KEYWORDS": ["không"],

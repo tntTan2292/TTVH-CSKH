@@ -16,12 +16,12 @@ BASE_DIR = r"d:\Antigravity - Project - TTVH\CSKH"
 CONFIG_PATH = os.path.join(BASE_DIR, "backend", "config.json")
 DB_PATH = os.path.join(BASE_DIR, "cskh_vip.db")
 UPLOAD_DIR = os.path.join(BASE_DIR, "backend", "temp_uploads")
-LOG_FILE = os.path.join(BASE_DIR, "error_log.txt")
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-    CONFIG = json.load(f)
+def get_config():
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 def clean_text(text):
     if not text or pd.isna(text): return ""
@@ -60,21 +60,27 @@ async def upload_excel(file: UploadFile = File(...)):
     session_id = None
     file_path = os.path.join(UPLOAD_DIR, f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
     try:
+        CONFIG = get_config()
         content = await file.read()
         with open(file_path, "wb") as buffer: buffer.write(content)
+        
         with pd.ExcelFile(file_path, engine='openpyxl') as xls:
             target_sheet = 'DanhSach' if 'DanhSach' in xls.sheet_names else xls.sheet_names[0]
             df_raw = pd.read_excel(xls, sheet_name=target_sheet, header=None, nrows=10)
+            
             header_row_idx = 1 
             for i, row in df_raw.iterrows():
                 row_str = " ".join([clean_text(val).lower() for val in row if not pd.isna(val)])
                 if "số hiệu" in row_str:
                     header_row_idx = i
                     break
+            
             df = pd.read_excel(xls, sheet_name=target_sheet, header=header_row_idx)
             df.columns = [clean_text(h) for h in df.columns]
 
-        # DYNAMIC MAPPING: Không dùng index cố định
+        log_terminal(f"AVAILABLE COLUMNS: {list(df.columns)}")
+
+        # DYNAMIC MAPPING EVIDENCE
         mapping = {}
         headers = [h.lower() for h in df.columns]
         for key, display_name in CONFIG["REQUIRED_COLUMNS"].items():
@@ -83,9 +89,9 @@ async def upload_excel(file: UploadFile = File(...)):
                 if target in h:
                     mapping[key] = i
                     break
-            if key not in mapping: raise Exception(f"Thiếu cột: {display_name}")
+            if key not in mapping: raise Exception(f"Thiếu cột bắt buộc: {display_name}")
 
-        log_terminal(f"Mapping Success: {mapping}")
+        log_terminal(f"MAPPING RESULTS: {mapping}")
 
         df = df.drop_duplicates(subset=[df.columns[mapping["tracking_id"]]], keep='last')
         customer_info = clean_text(df_raw.iloc[0, 0])
@@ -98,10 +104,12 @@ async def upload_excel(file: UploadFile = File(...)):
             cursor.execute("BEGIN TRANSACTION")
             cursor.execute('INSERT INTO import_sessions (filename, imported_at, total_rows, status) VALUES (?, ?, ?, ?)', (file.filename, datetime.now().isoformat(), len(df), "PROCESSING"))
             session_id = cursor.lastrowid
+            
             processed_orders = []
             success_count = 0
             now = datetime.now()
             
+            non_empty_prov = 0
             for _, row in df.iterrows():
                 tid = clean_text(row.iloc[mapping["tracking_id"]])
                 if not tid: continue
@@ -116,12 +124,14 @@ async def upload_excel(file: UploadFile = File(...)):
                     if not pd.isna(acc_val): aging = (now - pd.to_datetime(acc_val)).days
                 except: pass
 
-                # FIX: Dùng mapping động cho toàn bộ các trường
+                prov = clean_text(row.iloc[mapping["province"]])
+                if prov: non_empty_prov += 1
+
                 processed_orders.append((
                     tid, customer_id, 
-                    clean_text(row.iloc[mapping.get("address", 1)]), 
-                    clean_text(row.iloc[mapping.get("post_office", 3)]), 
-                    clean_text(row.iloc[mapping.get("province", 4)]), 
+                    clean_text(row.iloc[mapping["address"]]), 
+                    clean_text(row.iloc[mapping["post_office"]]), 
+                    prov, 
                     str(row.iloc[mapping["acceptance_date"]]), 
                     clean_text(row.iloc[mapping["result_final"]]), 
                     'Thành công' if is_success else 'Chưa thành công', 
@@ -133,14 +143,15 @@ async def upload_excel(file: UploadFile = File(...)):
             cursor.execute("INSERT OR REPLACE INTO customers (customer_id, customer_name, last_import) VALUES (?, ?, ?)", (customer_id, customer_name, datetime.now().isoformat()))
             cursor.executemany('INSERT OR REPLACE INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?)', processed_orders)
             cursor.execute("COMMIT")
-            log_terminal(f"Import Success. Session: {session_id}")
+            
+            log_terminal(f"IMPORT EVIDENCE: Total={len(processed_orders)}, Non-Empty Provinces={non_empty_prov}")
             return {"message": "Success", "session_id": session_id}
         except Exception as e:
             cursor.execute("ROLLBACK")
             raise e
         finally: conn.close()
     except Exception as e:
-        log_terminal(f"ERR: {str(e)}")
+        log_terminal(f"CRITICAL ERR: {str(e)}")
         return JSONResponse(status_code=500, content={"detail": str(e)})
     finally:
         if os.path.exists(file_path): os.remove(file_path)
@@ -153,35 +164,31 @@ async def get_radar_data():
     if not session: return {"labels": [], "datasets": []}
     
     sid = session['session_id']
-    total_raw = cursor.execute("SELECT COUNT(*) FROM orders WHERE session_id = ?", (sid,)).fetchone()[0]
-    log_terminal(f"RADAR DEBUG: Total rows for Session {sid} = {total_raw}")
+    log_terminal(f"--- RADAR AGGREGATION DEBUG (SID: {sid}) ---")
     
-    # 1. Thử Aggregate theo Tỉnh
+    # 1. Try Provinces with Strict Checking
     rows = cursor.execute('''
-        SELECT province, COUNT(*) as total, 
+        SELECT province as grp, COUNT(*) as total, 
         SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success 
         FROM orders WHERE session_id = ? AND province IS NOT NULL AND province != ""
         GROUP BY province ORDER BY total DESC LIMIT 8
     ''', (sid,)).fetchall()
     
-    log_terminal(f"RADAR DEBUG: Distinct Provinces found: {len(rows)}")
+    log_terminal(f"Groups found (Province): {len(rows)}")
     
-    labels = [r['province'] for r in rows]
-    data = [round(r['success']*100/r['total']) if r['total']>0 else 0 for r in rows]
-    
-    # 2. Fallback sang BCVH nếu Tỉnh rỗng (MUST ALWAYS HAVE DATA)
-    if not labels or len(labels) < 3:
-        log_terminal("RADAR DEBUG: Province too few, falling back to BCVH...")
+    if not rows or len(rows) < 3:
+        log_terminal("FALLBACK: Not enough provinces. Switching to BCVH Aggregation...")
         rows = cursor.execute('''
-            SELECT post_office_name, COUNT(*) as total, 
+            SELECT post_office_name as grp, COUNT(*) as total, 
             SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success 
             FROM orders WHERE session_id = ? 
             GROUP BY post_office_name ORDER BY total DESC LIMIT 8
         ''', (sid,)).fetchall()
-        labels = [r['post_office_name'][:10] for r in rows]
-        data = [round(r['success']*100/r['total']) if r['total']>0 else 0 for r in rows]
-        log_terminal(f"RADAR DEBUG: Distinct BCVH found: {len(rows)}")
+        log_terminal(f"Groups found (BCVH): {len(rows)}")
 
+    labels = [r['grp'][:15] for r in rows]
+    data = [round(r['success']*100/r['total']) if r['total']>0 else 0 for r in rows]
+    
     conn.close()
     log_terminal(f"FINAL RADAR LABELS: {labels}")
     log_terminal(f"FINAL RADAR DATA: {data}")
