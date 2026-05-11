@@ -56,25 +56,22 @@ init_db()
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"--- [RE-IMPORT] START: {file.filename} ---")
+    log_terminal(f"--- [EXECUTIVE IMPORT] START: {file.filename} ---")
     session_id = None
     file_path = os.path.join(UPLOAD_DIR, f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
     try:
         CONFIG = get_config()
         content = await file.read()
         with open(file_path, "wb") as buffer: buffer.write(content)
-        
         with pd.ExcelFile(file_path, engine='openpyxl') as xls:
             target_sheet = 'DanhSach' if 'DanhSach' in xls.sheet_names else xls.sheet_names[0]
             df_raw_10 = pd.read_excel(xls, sheet_name=target_sheet, header=None, nrows=10)
-            
             header_row_idx = 1 
             for i, row in df_raw_10.iterrows():
                 row_str = " ".join([clean_text(val).lower() for val in row if not pd.isna(val)])
                 if "số hiệu" in row_str or "mã bưu gửi" in row_str:
                     header_row_idx = i
                     break
-            
             df = pd.read_excel(xls, sheet_name=target_sheet, header=header_row_idx)
             df.columns = [clean_text(h) for h in df.columns]
 
@@ -147,10 +144,9 @@ async def get_province_performance():
         SELECT province, COUNT(*) as total, 
         SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success 
         FROM orders WHERE session_id = ? AND province != '' AND province IS NOT NULL
-        GROUP BY province ORDER BY total DESC LIMIT 10
+        GROUP BY province ORDER BY (success*1.0/total) DESC LIMIT 10
     ''', (sid,)).fetchall()
     conn.close()
-    # TRẢ VỀ DẠNG LIST PHẲNG CHO RECHARTS ĂN NGAY
     return [{"name": r['province'], "rate": round(r['success']*100/r['total']) if r['total']>0 else 0} for r in rows]
 
 @app.get("/api/dashboard/stats")
@@ -174,9 +170,17 @@ async def get_bcvh_summary():
     session = cursor.execute("SELECT session_id FROM import_sessions WHERE status='SUCCESS' ORDER BY session_id DESC LIMIT 1").fetchone()
     if not session: return []
     sid = session['session_id']
-    rows = cursor.execute('SELECT post_office_name, COUNT(*) as total, SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as success, SUM(CASE WHEN is_sla_violation=1 THEN 1 ELSE 0 END) as sla FROM orders WHERE session_id = ? GROUP BY post_office_name ORDER BY total DESC', (sid,)).fetchall()
+    # LẤY THÊM PROVINCE ĐỂ ĐỒNG BỘ MÀU
+    rows = cursor.execute('''
+        SELECT post_office_name, province, COUNT(*) as total, 
+        SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as success, 
+        SUM(CASE WHEN is_sla_violation=1 THEN 1 ELSE 0 END) as sla 
+        FROM orders WHERE session_id = ? 
+        GROUP BY post_office_name, province 
+        ORDER BY total DESC
+    ''', (sid,)).fetchall()
     conn.close()
-    return [{"name": r['post_office_name'], "total": r['total'], "success": r['success'], "sla": r['sla'], "rate": round(r['success']*100/r['total']) if r['total']>0 else 0} for r in rows]
+    return [{"name": r['post_office_name'], "province": r['province'], "total": r['total'], "success": r['success'], "sla": r['sla'], "rate": round(r['success']*100/r['total']) if r['total']>0 else 0} for r in rows]
 
 @app.get("/api/dashboard/bcvh-bottleneck")
 async def get_bottlenecks():

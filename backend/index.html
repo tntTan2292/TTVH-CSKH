@@ -16,29 +16,22 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root { 
-            --primary: #003a8c; 
-            --accent: #fadb14; 
-            --danger: #ff4d4f; 
-            --bg: #f0f2f5; 
-            --card-bg: #ffffff; 
-            --text-main: #1e293b;
-            --text-sub: #64748b;
-            --border: #e2e8f0;
+            --primary: #003a8c; --accent: #fadb14; --danger: #ef4444; 
+            --bg: #f0f2f5; --card-bg: #ffffff; --text-main: #1e293b;
+            --text-sub: #64748b; --border: #e2e8f0;
+            --color-best: #059669; --color-good: #003a8c; --color-mid: #f59e0b; --color-low: #ef4444;
         }
         body { margin: 0; font-family: 'Outfit', sans-serif; background: var(--bg); color: var(--text-main); }
-        .header { background: #ffffff; padding: 12px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+        .header { background: #ffffff; padding: 12px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1000; }
         .main-container { padding: 24px; max-width: 1920px; margin: 0 auto; }
-        .executive-card { background: var(--card-bg); border-radius: 12px; padding: 20px; border: 1px solid var(--border); height: 100%; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); transition: all 0.2s; }
-        .executive-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        .executive-card { background: var(--card-bg); border-radius: 12px; padding: 20px; border: 1px solid var(--border); height: 100%; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); transition: all 0.2s; }
         .kpi-value { font-size: 34px; font-weight: 700; color: var(--primary); line-height: 1.1; }
-        .kpi-sub-value { font-size: 13px; font-weight: 500; color: #10b981; margin-top: 4px; }
         .kpi-label { font-size: 11px; text-transform: uppercase; color: var(--text-sub); letter-spacing: 1px; margin-bottom: 8px; font-weight: 600; }
-        .ant-table { background: transparent !important; }
-        .ant-table-thead > tr > th { background: #f8fafc !important; color: var(--text-sub) !important; border-bottom: 1px solid var(--border) !important; font-size: 10px; font-weight: 700; }
-        .ant-table-tbody > tr > td { border-bottom: 1px solid #f1f5f9 !important; font-size: 12px; color: var(--text-main); }
-        .ant-tag { border-radius: 4px; border: none; font-weight: 600; }
-        .nav-brand { font-size: 18px; font-weight: 700; color: var(--primary); letter-spacing: -0.5px; }
+        .ant-table-thead > tr > th { background: #f8fafc !important; color: var(--text-sub) !important; font-size: 10px; font-weight: 700; }
+        .ant-table-tbody > tr > td { font-size: 12px; color: var(--text-main); }
+        .nav-brand { font-size: 18px; font-weight: 700; color: var(--primary); }
         .nav-brand span { color: #f97316; }
+        .color-indicator { width: 4px; height: 100%; position: absolute; left: 0; top: 0; border-radius: 4px 0 0 4px; }
     </style>
 </head>
 <body>
@@ -49,19 +42,16 @@
         const { Layout, Row, Col, Table, Tag, Progress, Button, message, Space, Typography, Badge, Modal, Result, Empty } = window.antd;
         const { Text, Title } = Typography;
         
-        class ErrorBoundary extends Component {
-            constructor(props) { super(props); this.state = { hasError: false }; }
-            static getDerivedStateFromError(error) { return { hasError: true }; }
-            render() {
-                if (this.state.hasError) return <div style={{padding: 20, color: '#ff4d4f', border: '1px solid #ff4d4f', borderRadius: 12, background: '#fff'}}>⚠️ Dashboard Error - Vui lòng F5 trang</div>;
-                return this.props.children;
-            }
-        }
+        const getPerformanceColor = (rate) => {
+            if (rate >= 90) return '#059669'; // Emerald
+            if (rate >= 75) return '#003a8c'; // Navy
+            if (rate >= 60) return '#f59e0b'; // Amber
+            return '#ef4444'; // Crimson
+        };
 
         const App = () => {
             const [stats, setStats] = useState(null);
             const [bcvhData, setBcvhData] = useState([]);
-            const [bottlenecks, setBottlenecks] = useState([]);
             const [slaRisk, setSlaRisk] = useState([]);
             const [provinceChartData, setProvinceChartData] = useState([]);
             const [loading, setLoading] = useState(true);
@@ -70,16 +60,14 @@
             const fetchAll = async () => {
                 setLoading(true);
                 try {
-                    const [s, b, n, r, p] = await Promise.all([
+                    const [s, b, r, p] = await Promise.all([
                         fetch(`${API_BASE}/stats`).then(res => res.json()),
                         fetch(`${API_BASE}/bcvh-summary`).then(res => res.json()),
-                        fetch(`${API_BASE}/bcvh-bottleneck`).then(res => res.json()),
                         fetch(`${API_BASE}/sla-risk`).then(res => res.json()),
                         fetch(`${API_BASE}/province-performance`).then(res => res.json())
                     ]);
                     setStats(s && !s.error ? s : null);
                     setBcvhData(Array.isArray(b) ? b : []);
-                    setBottlenecks(Array.isArray(n) ? n : []);
                     setSlaRisk(Array.isArray(r) ? r : []);
                     setProvinceChartData(Array.isArray(p) ? p : []);
                 } catch (err) { message.error("API Error 8010"); } 
@@ -88,29 +76,18 @@
 
             useEffect(() => { fetchAll(); }, []);
 
-            if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#f0f2f5', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#003a8c" /><p style={{marginTop: 16, color: '#64748b'}}>Đang khởi động EXECUTIVE CENTER...</p></div>;
+            if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#f0f2f5', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#003a8c" /><p style={{marginTop: 16, color: '#64748b'}}>Đang đồng bộ EXEC-CORE...</p></div>;
 
-            if (!stats) return (
-                <Layout style={{minHeight: '100vh', background: '#f0f2f5'}}>
-                    <div className="header"><div className="nav-brand">VNPOST HUẾ <span>D.O.C</span></div></div>
-                    <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống Điều hành Sẵn sàng" subTitle="Vui lòng nạp dữ liệu logistics để hiển thị chỉ số." extra={<Button type="primary" size="large" onClick={() => window.location.reload()}>IMPORT DATA</Button>} /></div>
-                </Layout>
-            );
+            if (!stats) return <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="System Ready" extra={<Button type="primary" onClick={() => window.location.reload()}>IMPORT DATA</Button>} /></div>;
 
-            const sTotal = stats?.kpis?.total || 1;
-            const successRate = (( (stats?.kpis?.success || 0) / sTotal) * 100).toFixed(1);
             const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip: ReTooltip, Cell } = window.Recharts || {};
 
             return (
-                <ErrorBoundary>
                 <Layout style={{minHeight: '100vh', background: '#f0f2f5'}}>
                     <div className="header">
-                        <Space size="large">
-                            <div className="nav-brand">VNPOST HUẾ <span>D.O.C</span></div>
-                            <Tag color="processing" style={{borderRadius: 100, padding: '0 12px'}}>LOGISTICS V2.2</Tag>
-                        </Space>
+                        <div className="nav-brand">VNPOST HUẾ <span>D.O.C</span></div>
                         <Space>
-                            <Button type="primary" onClick={() => window.location.reload()} style={{background: '#003a8c', border: 'none'}}>IMPORT EXCEL</Button>
+                            <Button type="primary" onClick={() => window.location.reload()} style={{background: '#003a8c', border: 'none'}}>NHẬP FILE MỚI</Button>
                             <Button icon={<span>🔄</span>} onClick={fetchAll} />
                         </Space>
                     </div>
@@ -119,58 +96,61 @@
                         <Row gutter={[20, 20]}>
                             {/* KPI SECTION */}
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #003a8c'}}><div className="kpi-label">Tổng sản lượng VIP</div><div className="kpi-value">{(stats?.kpis?.total ?? 0).toLocaleString()}</div></div></Col>
-                            <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #10b981'}}><div className="kpi-label">Phát thành công</div><div className="kpi-value" style={{color: '#10b981'}}>{(stats?.kpis?.success ?? 0).toLocaleString()}</div><div className="kpi-sub-value">↑ {successRate}% Success Rate</div></div></Col>
-                            <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #f59e0b'}}><div className="kpi-label">Tồn đang xử lý</div><div className="kpi-value" style={{color: '#f59e0b'}}>{(stats?.kpis?.pending ?? 0).toLocaleString()}</div></div></Col>
+                            <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #059669'}}><div className="kpi-label">Phát thành công</div><div className="kpi-value" style={{color: '#059669'}}>{(stats?.kpis?.success ?? 0).toLocaleString()}</div></div></Col>
+                            <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #f59e0b'}}><div className="kpi-label">Tồn xử lý</div><div className="kpi-value" style={{color: '#f59e0b'}}>{(stats?.kpis?.pending ?? 0).toLocaleString()}</div></div></Col>
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #ef4444'}}><div className="kpi-label">Vi phạm SLA</div><div className="kpi-value" style={{color: '#ef4444'}}>{(stats?.kpis?.sla ?? 0).toLocaleString()}</div></div></Col>
 
-                            <Col span={15}>
+                            <Col span={14}>
                                 <div className="executive-card">
-                                    <Title level={5} style={{marginBottom: 20, fontSize: 14, color: '#475569'}}>📊 HIỆU SUẤT BCVH (BƯU CỤC VẬN HÀNH)</Title>
+                                    <Title level={5} style={{marginBottom: 20, fontSize: 14, color: '#475569'}}>📊 HIỆU SUẤT BCVH (THEO TỈNH CHỦ QUẢN)</Title>
                                     <Table dataSource={bcvhData} columns={[
-                                        { title: 'TÊN BƯU CỤC', dataIndex: 'name', render: t => <Text strong style={{color: '#334155'}}>{t}</Text> },
+                                        { title: 'TÊN BƯU CỤC', dataIndex: 'name', render: (t, r) => (
+                                            <Space>
+                                                <Badge color={getPerformanceColor(provinceChartData.find(p => p.name === r.province)?.rate || 0)} />
+                                                <Text strong style={{color: '#334155'}}>{t}</Text>
+                                            </Space>
+                                        )},
+                                        { title: 'TỈNH PHÁT', dataIndex: 'province', render: (v) => <Tag style={{fontSize: 10}}>{v}</Tag> },
                                         { title: 'SẢN LƯỢNG', dataIndex: 'total', align: 'right' },
-                                        { title: 'THÀNH CÔNG', dataIndex: 'success', align: 'right', render: v => <Text style={{color: '#10b981', fontWeight: 600}}>{v}</Text> },
-                                        { title: 'TỶ LỆ (%)', dataIndex: 'rate', align: 'center', render: v => <Tag color={v > 85 ? 'success' : 'warning'}>{v}%</Tag> }
+                                        { title: 'TỶ LỆ (%)', dataIndex: 'rate', align: 'center', render: v => <Tag color={getPerformanceColor(v)}>{v}%</Tag> }
                                     ]} pagination={{pageSize: 8}} size="small" />
                                 </div>
                             </Col>
 
-                            <Col span={9}>
+                            <Col span={10}>
                                 <div className="executive-card">
-                                    <Title level={5} style={{marginBottom: 20, fontSize: 14, color: '#475569'}}>📈 HIỆU SUẤT THEO TỈNH PHÁT</Title>
+                                    <Title level={5} style={{marginBottom: 20, fontSize: 14, color: '#475569'}}>📈 XẾP HẠNG HIỆU SUẤT TỈNH PHÁT</Title>
                                     <div style={{height: 330}}>
                                         {ResponsiveContainer && provinceChartData.length > 0 ? (
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <BarChart data={provinceChartData} layout="vertical" margin={{ left: 80, right: 30 }}>
                                                     <XAxis type="number" hide />
                                                     <YAxis dataKey="name" type="category" tick={{fill: '#64748b', fontSize: 10}} width={120} />
-                                                    <ReTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'}} />
+                                                    <ReTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{borderRadius: 8, border: 'none'}} />
                                                     <Bar dataKey="rate" radius={[0, 4, 4, 0]} isAnimationActive={false}>
-                                                        {provinceChartData.map((e, i) => <Cell key={i} fill={e.rate > 85 ? '#003a8c' : '#94a3b8'} />)}
+                                                        {provinceChartData.map((e, i) => <Cell key={i} fill={getPerformanceColor(e.rate)} />)}
                                                     </Bar>
                                                 </BarChart>
                                             </ResponsiveContainer>
-                                        ) : <div style={{padding: 50, textAlign: 'center'}}><Empty description="Chưa có dữ liệu" /></div>}
+                                        ) : <div style={{padding: 50, textAlign: 'center'}}><Empty description="Không có dữ liệu" /></div>}
                                     </div>
                                 </div>
                             </Col>
 
                             <Col span={24}>
                                 <div className="executive-card" style={{borderLeft: '4px solid #ef4444'}}>
-                                    <Title level={5} style={{marginBottom: 20, fontSize: 14, color: '#475569'}}>🛡️ ACTION CENTER: QUẢN TRỊ RỦI RO SLA</Title>
+                                    <Title level={5} style={{marginBottom: 20, fontSize: 14, color: '#475569'}}>🛡️ ACTION CENTER (QUẢN TRỊ RỦI RO SLA)</Title>
                                     <Table dataSource={slaRisk} columns={[
                                         { title: 'MÃ BƯU GỬI', dataIndex: 'tracking_id', render: t => <Text code>{t}</Text> },
                                         { title: 'TỈNH PHÁT', dataIndex: 'province' },
                                         { title: 'BCVH HIỆN TẠI', dataIndex: 'post_office_name' },
-                                        { title: 'TUỔI ĐƠN', dataIndex: 'aging', render: v => <Tag color="error">{v} NGÀY</Tag> },
-                                        { title: 'HÀNH ĐỘNG', render: () => <Button size="small" type="link">Chi tiết</Button> }
+                                        { title: 'TUỔI ĐƠN', dataIndex: 'aging', render: v => <Tag color="error">{v} NGÀY</Tag> }
                                     ]} pagination={{pageSize: 5}} size="small" />
                                 </div>
                             </Col>
                         </Row>
                     </div>
                 </Layout>
-                </ErrorBoundary>
             );
         };
 
