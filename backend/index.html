@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V2.0</title>
+    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V2.1</title>
     <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
@@ -36,14 +36,12 @@
         const { useState, useEffect, Component } = React;
         const { Layout, Row, Col, Table, Tag, Progress, Button, message, Space, Typography, Badge, Modal, Result, Empty } = window.antd;
         const { Text, Title } = Typography;
-        const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip: ReTooltip, Cell } = window.Recharts || {};
-        const API_BASE = "http://localhost:8010/api/dashboard";
-
+        
         class ErrorBoundary extends Component {
             constructor(props) { super(props); this.state = { hasError: false }; }
             static getDerivedStateFromError(error) { return { hasError: true }; }
             render() {
-                if (this.state.hasError) return <div style={{padding: 20, color: '#ff4d4f', border: '1px solid #ff4d4f', borderRadius: 8}}>⚠️ Widget Crash - Vui lòng F5</div>;
+                if (this.state.hasError) return <div style={{padding: 20, color: '#ff4d4f', border: '1px solid #ff4d4f', borderRadius: 8, background: '#001529'}}>⚠️ Dashboard Component Error - Vui lòng F5</div>;
                 return this.props.children;
             }
         }
@@ -55,6 +53,7 @@
             const [slaRisk, setSlaRisk] = useState([]);
             const [provinceChartData, setProvinceChartData] = useState([]);
             const [loading, setLoading] = useState(true);
+            const API_BASE = "http://localhost:8010/api/dashboard";
 
             const fetchAll = async () => {
                 setLoading(true);
@@ -72,41 +71,60 @@
                     setBottlenecks(Array.isArray(n) ? n : []);
                     setSlaRisk(Array.isArray(r) ? r : []);
 
-                    console.log("RAW PROVINCE FROM API:", p_raw);
-
-                    if (p_raw && p_raw.labels && p_raw.datasets && p_raw.datasets[0]) {
-                        const transformed = p_raw.labels.map((label, idx) => ({
-                            name: label,
-                            rate: p_raw.datasets[0].data[idx]
-                        }));
-                        console.log("TRANSFORMED DATA FOR RECHARTS:", transformed);
-                        setProvinceChartData(transformed);
+                    if (p_raw && p_raw.labels && p_raw.datasets?.[0]?.data) {
+                        setProvinceChartData(p_raw.labels.map((l, i) => ({ name: l, rate: p_raw.datasets[0].data[i] })));
                     } else {
-                        console.warn("PROVINCE DATA STRUCTURE INVALID:", p_raw);
                         setProvinceChartData([]);
                     }
                 } catch (err) { 
-                    console.error("FETCH ERROR:", err);
-                    message.error("Connectivity Failure: 8010"); 
+                    message.error("Mất kết nối API 8010"); 
                 } finally { setLoading(false); }
             };
 
             useEffect(() => { fetchAll(); }, []);
 
-            if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#000c17', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#fadb14" /><p style={{color: 'white', marginTop: 16}}>LOADING EXECUTIVE V2.1...</p></div>;
+            const handleUpload = async () => {
+                const input = document.createElement('input');
+                input.type = 'file'; input.accept = '.xlsx';
+                input.onchange = async (e) => {
+                    const formData = new FormData(); formData.append('file', e.target.files[0]);
+                    const hide = message.loading('Đang khởi tạo Snapshot V2.1...', 0);
+                    try {
+                        const res = await fetch(`http://localhost:8010/upload`, { method: 'POST', body: formData });
+                        if (res.ok) { message.success("Snapshot Ready!"); fetchAll(); }
+                        else { const j = await res.json(); Modal.error({ title: 'Mapping Error', content: j.detail }); }
+                    } catch (err) { message.error("Lỗi mạng khi Import"); }
+                    finally { hide(); }
+                };
+                input.click();
+            };
 
-            const successRate = stats ? ((stats.kpis.success / stats.kpis.total) * 100).toFixed(1) : "0.0";
+            if (loading && !stats) return <div style={{padding: 100, textAlign: 'center', background: '#000c17', height: '100vh'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#fadb14" /><p style={{color: 'white', marginTop: 16}}>SYNCING EXECUTIVE PANEL...</p></div>;
+
+            if (!stats) return (
+                <Layout style={{minHeight: '100vh', background: 'var(--bg)'}}>
+                    <div className="header"><Title level={4} style={{color: 'white', margin: 0}}>VNPOST HUE DOC</Title></div>
+                    <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title={<span style={{color: 'white'}}>Executive System Ready</span>} subTitle={<span style={{color: 'rgba(255,255,255,0.5)'}}>Vui lòng nạp Snapshot Logistics để bắt đầu điều hành.</span>} extra={<Button type="primary" size="large" onClick={handleUpload} style={{background: 'var(--accent)', color: 'black', border: 'none'}}>IMPORT DỮ LIỆU</Button>} /></div>
+                </Layout>
+            );
+
+            const sTotal = stats?.kpis?.total || 1;
+            const successRate = (( (stats?.kpis?.success || 0) / sTotal) * 100).toFixed(1);
+
+            // SAFE RECHARTS DETECTION
+            const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip: ReTooltip, Cell } = window.Recharts || {};
 
             return (
                 <ErrorBoundary>
                 <Layout style={{minHeight: '100vh', background: 'var(--bg)'}}>
                     <div className="header">
                         <Space size="large">
-                            <Title level={4} style={{color: 'white', margin: 0, letterSpacing: 2}}>VNPOST HUE <span style={{color: 'var(--accent)', fontSize: 14}}>DOC</span><span className="version-tag">V2.1 - SYNC SUCCESS</span></Title>
-                            <Tag color="gold" style={{background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', fontSize: 10}}>ACTIVE DATASET</Tag>
+                            <Title level={4} style={{color: 'white', margin: 0, letterSpacing: 2}}>VNPOST HUE <span style={{color: 'var(--accent)', fontSize: 14}}>DOC</span><span className="version-tag">V2.1 - STABLE</span></Title>
+                            <Tag color="gold" style={{background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', fontSize: 10}}>DATASET V{stats?.session_info?.id ?? '0'}</Tag>
                         </Space>
                         <Space>
-                            <Button type="primary" onClick={() => window.location.reload()} style={{background: 'var(--accent)', color: 'black', fontWeight: 700, border: 'none', height: 40}}>RELOAD DASHBOARD</Button>
+                            <Button type="primary" onClick={handleUpload} style={{background: 'var(--accent)', color: 'black', fontWeight: 700, border: 'none'}}>NHẬP DỮ LIỆU</Button>
+                            <Button icon={<span>🔄</span>} onClick={fetchAll} ghost />
                         </Space>
                     </div>
 
@@ -120,11 +138,11 @@
                             <Col span={14}>
                                 <div className="executive-card">
                                     <Title level={5} style={{color: 'white', marginBottom: 16, fontSize: 14}}>📊 HIỆU SUẤT BCVH</Title>
-                                    <Table dataSource={bcvhData || []} columns={[
-                                        { title: 'BƯU CỤC', dataIndex: 'name', key: 'name' },
-                                        { title: 'TỔNG', dataIndex: 'total', key: 'total', align: 'right' },
-                                        { title: 'THÀNH CÔNG', dataIndex: 'success', key: 'success', align: 'right', render: (v) => <span style={{color: '#b7eb8f'}}>{v}</span> },
-                                        { title: 'TỶ LỆ (%)', dataIndex: 'rate', key: 'rate', align: 'center', render: (v) => <Tag color={v > 90 ? 'green' : 'orange'} style={{fontSize: 10}}>{v}%</Tag> }
+                                    <Table dataSource={bcvhData} columns={[
+                                        { title: 'BƯU CỤC', dataIndex: 'name' },
+                                        { title: 'TỔNG', dataIndex: 'total', align: 'right' },
+                                        { title: 'THÀNH CÔNG', dataIndex: 'success', align: 'right', render: (v) => <span style={{color: '#b7eb8f'}}>{v}</span> },
+                                        { title: 'TỶ LỆ (%)', dataIndex: 'rate', align: 'center', render: (v) => <Tag color={v > 90 ? 'green' : 'orange'} style={{fontSize: 10}}>{v}%</Tag> }
                                     ]} pagination={{pageSize: 8}} size="small" />
                                 </div>
                             </Col>
@@ -133,37 +151,30 @@
                                 <div className="executive-card">
                                     <Title level={5} style={{color: 'white', marginBottom: 16, fontSize: 14}}>📈 HIỆU SUẤT THEO TỈNH PHÁT</Title>
                                     <div style={{height: 330}}>
-                                        {provinceChartData.length > 0 ? (
+                                        {ResponsiveContainer && provinceChartData.length > 0 ? (
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <BarChart data={provinceChartData} layout="vertical" margin={{ left: 60, right: 30 }}>
                                                     <XAxis type="number" hide />
                                                     <YAxis dataKey="name" type="category" tick={{fill: 'rgba(255,255,255,0.7)', fontSize: 10}} width={120} />
                                                     <ReTooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{background: '#001529', border: '1px solid var(--accent)', color: 'white'}} />
-                                                    <Bar dataKey="rate" name="Tỷ lệ (%)" radius={[0, 4, 4, 0]}>
-                                                        {provinceChartData.map((entry, index) => (
-                                                            <Cell key={`cell-${index}`} fill={entry.rate > 85 ? '#52c41a' : '#faad14'} />
-                                                        ))}
+                                                    <Bar dataKey="rate" radius={[0, 4, 4, 0]}>
+                                                        {provinceChartData.map((e, i) => <Cell key={i} fill={e.rate > 85 ? '#52c41a' : '#faad14'} />)}
                                                     </Bar>
                                                 </BarChart>
                                             </ResponsiveContainer>
-                                        ) : (
-                                            <div style={{padding: 50, textAlign: 'center'}}>
-                                                <Empty description={<span style={{color: 'rgba(255,255,255,0.4)'}}>Không có dữ liệu tỉnh phát</span>} />
-                                                <Button type="link" onClick={fetchAll}>Thử tải lại dữ liệu</Button>
-                                            </div>
-                                        )}
+                                        ) : <div style={{padding: 50, textAlign: 'center', color: 'rgba(255,255,255,0.4)'}}><Empty description="Chưa có dữ liệu đồ thị" /></div>}
                                     </div>
                                 </div>
                             </Col>
 
                             <Col span={24}>
                                 <div className="executive-card">
-                                    <Title level={5} style={{color: 'white', marginBottom: 16, fontSize: 14}}>🛡️ ACTION CENTER (QUẢN TRỊ RỦI RO SLA)</Title>
-                                    <Table dataSource={slaRisk || []} columns={[
-                                        { title: 'MÃ BƯU GỬI', dataIndex: 'tracking_id', key: 'tracking_id' },
-                                        { title: 'TỈNH PHÁT', dataIndex: 'province', key: 'province' },
-                                        { title: 'BƯU CỤC VẬN HÀNH', dataIndex: 'post_office_name', key: 'post_office_name' },
-                                        { title: 'TUỔI ĐƠN', dataIndex: 'aging', key: 'aging', render: (v) => <Tag color="error" style={{fontSize: 10, fontWeight: 700}}>{v} NGÀY</Tag> }
+                                    <Title level={5} style={{color: 'white', marginBottom: 16, fontSize: 14}}>🛡️ ACTION CENTER (RỦI RO SLA)</Title>
+                                    <Table dataSource={slaRisk} columns={[
+                                        { title: 'MÃ BƯU GỬI', dataIndex: 'tracking_id' },
+                                        { title: 'TỈNH PHÁT', dataIndex: 'province' },
+                                        { title: 'BƯU CỤC VẬN HÀNH', dataIndex: 'post_office_name' },
+                                        { title: 'TUỔI ĐƠN', dataIndex: 'aging', render: (v) => <Tag color="error" style={{fontSize: 10, fontWeight: 700}}>{v} NGÀY</Tag> }
                                     ]} pagination={{pageSize: 5}} size="small" />
                                 </div>
                             </Col>
