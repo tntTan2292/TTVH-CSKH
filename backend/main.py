@@ -19,7 +19,7 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "backend", "temp_uploads")
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# GEOGRAPHIC MAPPING (BẮC / NAM)
+# GEOGRAPHIC MAPPING
 NORTH_PROVINCES = [
     "Hà Nội", "Hải Phòng", "Bắc Ninh", "Thái Nguyên", "Vĩnh Phúc", "Hải Dương", "Quảng Ninh", 
     "Ninh Bình", "Nam Định", "Hà Nam", "Hòa Bình", "Sơn La", "Điện Biên", "Lai Châu", "Lào Cai", 
@@ -29,7 +29,7 @@ NORTH_PROVINCES = [
 def get_direction(province_name):
     if not province_name: return "Nam"
     if any(p in province_name for p in NORTH_PROVINCES): return "Bắc"
-    return "Nam" # Central & South are mapped to 'Nam' as per user request
+    return "Nam"
 
 def get_config():
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -37,8 +37,9 @@ def get_config():
 
 def clean_text(text):
     if not text or pd.isna(text): return ""
+    # NORMALIZE UNICODE & STRIP SPACES
     text = unicodedata.normalize('NFC', str(text))
-    return text.replace('\xa0', ' ').strip()
+    return text.strip()
 
 def log_terminal(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
@@ -72,27 +73,33 @@ init_db()
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"--- [DIRECTIONAL SYNC] START: {file.filename} ---")
+    log_terminal(f"--- [VERIFICATION RUN] START: {file.filename} ---")
     session_id = None
     file_path = os.path.join(UPLOAD_DIR, f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
     try:
-        CONFIG = get_config()
         content = await file.read()
         with open(file_path, "wb") as buffer: buffer.write(content)
+        
+        # READ EXCEL (DATA ONLY via openpyxl engine)
         with pd.ExcelFile(file_path, engine='openpyxl') as xls:
             target_sheet = 'DanhSach' if 'DanhSach' in xls.sheet_names else xls.sheet_names[0]
             df_raw_10 = pd.read_excel(xls, sheet_name=target_sheet, header=None, nrows=10)
-            header_row_idx = 1 
+            
+            header_row_idx = 0
             for i, row in df_raw_10.iterrows():
                 row_str = " ".join([clean_text(val).lower() for val in row if not pd.isna(val)])
-                if "số hiệu" in row_str or "mã bưu gửi" in row_str:
+                if any(k in row_str for k in ["số hiệu", "mã bưu gửi", "tỉnh", "bcvh"]):
                     header_row_idx = i
                     break
+            
             df = pd.read_excel(xls, sheet_name=target_sheet, header=header_row_idx)
             df.columns = [clean_text(h) for h in df.columns]
 
         headers_lower = [h.lower() for h in df.columns]
         def find_best_col(target_keywords, exclude_keywords=[]):
+            # PRIORITIZE EXACT MATCH IF POSSIBLE
+            for i, h in enumerate(headers_lower):
+                if h in target_keywords: return i
             for i, h in enumerate(headers_lower):
                 if any(tk in h for tk in target_keywords):
                     if not any(ek in h for ek in exclude_keywords): return i
@@ -102,13 +109,15 @@ async def upload_excel(file: UploadFile = File(...)):
             "tracking_id": find_best_col(["số hiệu", "mã bưu gửi"]),
             "result_first": find_best_col(["kết quả phát lần đầu", "kết quả lần đầu"]),
             "result_final": find_best_col(["kết quả phát cuối cùng", "kết quả phát lần cuối", "kết quả cuối cùng"]),
-            "province": find_best_col(["tỉnh phát", "tỉnh"], ["mã"]),
+            "province": find_best_col(["tỉnh", "tỉnh phát"], ["mã"]), # PRIORITIZE "Tỉnh"
             "post_office": find_best_col(["bcvh", "tên bcvh", "bưu cục vận hành"], ["mã"]),
             "acceptance_date": find_best_col(["ngày chấp nhận", "ngày gửi"]),
             "address": find_best_col(["địa chỉ"], ["mã"])
         }
 
+        log_terminal(f"Dynamic Mapping: {mapping}")
         df = df.drop_duplicates(subset=[df.columns[mapping["tracking_id"]]], keep='last')
+        
         conn = get_db_conn()
         cursor = conn.cursor()
         try:
@@ -117,23 +126,48 @@ async def upload_excel(file: UploadFile = File(...)):
             session_id = cursor.lastrowid
             processed_orders = []
             success_count = 0
+            sla_count = 0
             now = datetime.now()
+            
             for _, row in df.iterrows():
                 tid = clean_text(row.iloc[mapping["tracking_id"]])
                 if not tid: continue
+                
+                # FINAL RESULT LOGIC
                 res_final = clean_text(row.iloc[mapping["result_final"]]).lower() if mapping["result_final"] is not None else ""
                 is_success = "đã phát thành công" in res_final
                 if is_success: success_count += 1
+                
+                # FIRST RESULT + SLA LOGIC
                 res_first = clean_text(row.iloc[mapping["result_first"]]).lower() if mapping["result_first"] is not None else ""
                 aging = 0
                 try:
                     acc_val = row.iloc[mapping["acceptance_date"]]
-                    if not pd.isna(acc_val): aging = (now - pd.to_datetime(acc_val)).days
+                    if not pd.isna(acc_val):
+                        aging = (now - pd.to_datetime(acc_val)).days
                 except: pass
+                
                 is_sla_violation = (int(aging) > 3) and ("chưa có tt phát" in res_first)
-                processed_orders.append((tid, "UNKNOWN", clean_text(row.iloc[mapping["address"]]) if mapping["address"] is not None else "", clean_text(row.iloc[mapping["post_office"]]), clean_text(row.iloc[mapping["province"]]) if mapping["province"] is not None else "", str(row.iloc[mapping["acceptance_date"]]), res_first, res_final, 'Thành công' if is_success else 'Chưa thành công', max(0, int(aging)), is_sla_violation, session_id))
+                if is_sla_violation: sla_count += 1
+                
+                processed_orders.append((
+                    tid, "UNKNOWN", 
+                    clean_text(row.iloc[mapping["address"]]) if mapping["address"] is not None else "", 
+                    clean_text(row.iloc[mapping["post_office"]]), 
+                    clean_text(row.iloc[mapping["province"]]) if mapping["province"] is not None else "", 
+                    str(row.iloc[mapping["acceptance_date"]]),
+                    res_first, res_final,
+                    'Thành công' if is_success else 'Chưa thành công', 
+                    max(0, int(aging)), is_sla_violation, session_id
+                ))
 
-            cursor.execute('UPDATE import_sessions SET success_count = ?, status = ? WHERE session_id = ?', (success_count, "SUCCESS", session_id))
+            # FORENSIC VERIFICATION
+            log_terminal(f"VERIFICATION -> TOTAL: {len(df)}")
+            log_terminal(f"VERIFICATION -> SUCCESS: {success_count}")
+            log_terminal(f"VERIFICATION -> PENDING: {len(df) - success_count}")
+            log_terminal(f"VERIFICATION -> SLA (>3D & Chưa TT): {sla_count}")
+
+            cursor.execute('UPDATE import_sessions SET unique_ids = ?, success_count = ?, status = ? WHERE session_id = ?', (len(processed_orders), success_count, "SUCCESS", session_id))
             cursor.executemany('INSERT OR REPLACE INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', processed_orders)
             cursor.execute("COMMIT")
             return {"message": "Success", "session_id": session_id}
@@ -159,7 +193,7 @@ async def get_province_performance():
         SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success,
         SUM(CASE WHEN is_sla_violation = 1 THEN 1 ELSE 0 END) as sla
         FROM orders WHERE session_id = ? AND province != '' AND province IS NOT NULL
-        GROUP BY province ORDER BY total DESC LIMIT 15
+        GROUP BY province ORDER BY total DESC LIMIT 10
     ''', (sid,)).fetchall()
     conn.close()
     return [{
@@ -182,7 +216,7 @@ async def get_stats():
     kpis = cursor.execute('SELECT COUNT(*) as total, SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as success, SUM(CASE WHEN is_sla_violation=1 THEN 1 ELSE 0 END) as sla FROM orders WHERE session_id=?', (sid,)).fetchone()
     
     # DIRECTIONAL STATS
-    north_stats = cursor.execute('''
+    north_count = cursor.execute('''
         SELECT COUNT(*) as total, SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as success 
         FROM orders WHERE session_id=? AND (province LIKE '%Hà Nội%' OR province LIKE '%Bắc Ninh%' OR province LIKE '%Hải Phòng%' OR province LIKE '%Thái Nguyên%' OR province LIKE '%Quảng Ninh%')
     ''', (sid,)).fetchone()
@@ -192,8 +226,8 @@ async def get_stats():
         "session_info": {"id": sid, "timestamp": session['imported_at'], "filename": session['filename']},
         "kpis": {"total": kpis['total'], "success": kpis['success'], "pending": kpis['total'] - kpis['success'], "sla": kpis['sla']},
         "directions": {
-            "north": {"total": north_stats['total'] or 0, "success": north_stats['success'] or 0},
-            "south": {"total": (kpis['total'] or 0) - (north_stats['total'] or 0), "success": (kpis['success'] or 0) - (north_stats['success'] or 0)}
+            "north": {"total": north_count['total'] or 0, "success": north_count['success'] or 0},
+            "south": {"total": (kpis['total'] or 0) - (north_count['total'] or 0), "success": (kpis['success'] or 0) - (north_count['success'] or 0)}
         }
     }
 
