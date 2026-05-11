@@ -19,6 +19,18 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "backend", "temp_uploads")
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# GEOGRAPHIC MAPPING (BẮC / NAM)
+NORTH_PROVINCES = [
+    "Hà Nội", "Hải Phòng", "Bắc Ninh", "Thái Nguyên", "Vĩnh Phúc", "Hải Dương", "Quảng Ninh", 
+    "Ninh Bình", "Nam Định", "Hà Nam", "Hòa Bình", "Sơn La", "Điện Biên", "Lai Châu", "Lào Cai", 
+    "Yên Bái", "Phú Thọ", "Bắc Giang", "Lạng Sơn", "Tuyên Quang", "Hà Giang", "Cao Bằng", "Bắc Kạn"
+]
+
+def get_direction(province_name):
+    if not province_name: return "Nam"
+    if any(p in province_name for p in NORTH_PROVINCES): return "Bắc"
+    return "Nam" # Central & South are mapped to 'Nam' as per user request
+
 def get_config():
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -60,7 +72,7 @@ init_db()
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"--- [MULTI-METRIC SYNC] START: {file.filename} ---")
+    log_terminal(f"--- [DIRECTIONAL SYNC] START: {file.filename} ---")
     session_id = None
     file_path = os.path.join(UPLOAD_DIR, f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
     try:
@@ -152,6 +164,7 @@ async def get_province_performance():
     conn.close()
     return [{
         "name": r['province'], 
+        "direction": get_direction(r['province']),
         "total": r['total'],
         "success": r['success'],
         "sla": r['sla'],
@@ -167,10 +180,21 @@ async def get_stats():
     if not session: return {"error": "No Data"}
     sid = session['session_id']
     kpis = cursor.execute('SELECT COUNT(*) as total, SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as success, SUM(CASE WHEN is_sla_violation=1 THEN 1 ELSE 0 END) as sla FROM orders WHERE session_id=?', (sid,)).fetchone()
+    
+    # DIRECTIONAL STATS
+    north_stats = cursor.execute('''
+        SELECT COUNT(*) as total, SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as success 
+        FROM orders WHERE session_id=? AND (province LIKE '%Hà Nội%' OR province LIKE '%Bắc Ninh%' OR province LIKE '%Hải Phòng%' OR province LIKE '%Thái Nguyên%' OR province LIKE '%Quảng Ninh%')
+    ''', (sid,)).fetchone()
+    
     conn.close()
     return {
         "session_info": {"id": sid, "timestamp": session['imported_at'], "filename": session['filename']},
-        "kpis": {"total": kpis['total'], "success": kpis['success'], "pending": kpis['total'] - kpis['success'], "sla": kpis['sla']}
+        "kpis": {"total": kpis['total'], "success": kpis['success'], "pending": kpis['total'] - kpis['success'], "sla": kpis['sla']},
+        "directions": {
+            "north": {"total": north_stats['total'] or 0, "success": north_stats['success'] or 0},
+            "south": {"total": (kpis['total'] or 0) - (north_stats['total'] or 0), "success": (kpis['success'] or 0) - (north_stats['success'] or 0)}
+        }
     }
 
 @app.get("/api/dashboard/bcvh-summary")
