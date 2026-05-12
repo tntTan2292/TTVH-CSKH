@@ -1,0 +1,28 @@
+{
+  "thresholds": {
+    "success_rate_min": 85,
+    "sla_rate_max": 5,
+    "pending_count_max": 50,
+    "north_south_gap_max": 15
+  },
+  "rules": [
+    {
+      "id": "low_success",
+      "condition": "success_rate < 85",
+      "commentary": "⚠️ CẢNH BÁO: Tỷ lệ phát thành công tổng thể đang thấp hơn ngưỡng mục tiêu ({success_rate}% < 85%).",
+      "action": "Yêu cầu các BCVH rà soát lại lý do phát không thành công, đặc biệt là nhóm lý do chủ quan."
+    },
+    {
+      "id": "high_sla",
+      "condition": "sla_count > 10",
+      "commentary": "🚨 RỦI RO SLA: Hệ thống ghi nhận {sla_count} đơn đang vi phạm SLA giao hàng > 3 ngày.",
+      "action": "Lập danh sách chi tiết mã bưu gửi SLA gửi trực tiếp cho đội ngũ CSKH xử lý ưu tiên trong ca làm việc tới."
+    },
+    {
+      "id": "north_risk",
+      "condition": "north_rate < south_rate - 10",
+      "commentary": "📉 ĐIỂM NÓNG: Hiệu suất hướng Bắc ({north_rate}%) đang thấp hơn đáng kể so với hướng Nam ({south_rate}%).",
+      "action": "Kiểm tra lại khâu kết nối liên tỉnh và thời gian lưu kho tại các HUB phía Bắc."
+    }
+  ]
+}

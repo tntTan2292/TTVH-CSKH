@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V2.9</title>
+    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V3.0</title>
     <!-- LIBRARIES -->
     <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
@@ -33,6 +33,7 @@
         .section-indicator { width: 4px; height: 18px; background: var(--primary); border-radius: 2px; margin-right: 12px; }
         .section-title { font-size: 12px; font-weight: 700; color: var(--text-main); text-transform: uppercase; margin: 0; }
         .nav-brand { font-size: 18px; font-weight: 800; color: var(--primary); }
+        .report-preview { background: #f1f5f9; padding: 24px; border-radius: 8px; font-family: 'Courier New', Courier, monospace; white-space: pre-wrap; max-height: 500px; overflow-y: auto; border: 1px solid var(--border); }
     </style>
 </head>
 <body>
@@ -40,7 +41,7 @@
 
     <script type="text/babel">
         const { useState, useEffect } = React;
-        const { Layout, Row, Col, Table, Tag, Progress, Button, message, Space, Typography, Badge, Result, Statistic } = window.antd;
+        const { Layout, Row, Col, Table, Tag, Progress, Button, message, Space, Typography, Badge, Result, Statistic, Modal } = window.antd;
         const { Text, Title } = Typography;
         
         const getPerformanceColor = (rate) => {
@@ -56,6 +57,8 @@
             const [slaRisk, setSlaRisk] = useState([]);
             const [provinceData, setProvinceData] = useState([]);
             const [loading, setLoading] = useState(true);
+            const [reportModal, setReportModal] = useState(false);
+            const [reportContent, setReportContent] = useState("");
             const API_BASE = "http://localhost:8010";
 
             const fetchAll = async () => {
@@ -95,8 +98,26 @@
                 input.click();
             };
 
+            const generateReport = async () => {
+                const hide = message.loading('Đang soạn báo cáo điều hành...', 0);
+                try {
+                    const res = await fetch(`${API_BASE}/api/dashboard/generate-report`);
+                    const json = await res.json();
+                    if (json.report) {
+                        setReportContent(json.report);
+                        setReportModal(true);
+                    } else message.error("Lỗi soạn báo cáo");
+                } catch (err) { message.error("Lỗi kết nối"); }
+                finally { hide(); }
+            };
+
+            const copyReport = () => {
+                navigator.clipboard.writeText(reportContent);
+                message.success("Đã sao chép báo cáo vào bộ nhớ tạm!");
+            };
+
             if (loading && !data) return <div style={{padding: 100, textAlign: 'center'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#003a8c" /></div>;
-            if (!data) return <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống V2.9" extra={<Button type="primary" onClick={handleUpload}>IMPORT DATA</Button>} /></div>;
+            if (!data) return <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống V3.0" extra={<Button type="primary" onClick={handleUpload}>IMPORT DATA</Button>} /></div>;
 
             const nRate = data.directions.north.total > 0 ? Math.round(data.directions.north.success * 100 / data.directions.north.total) : 0;
             const sRate = data.directions.south.total > 0 ? Math.round(data.directions.south.success * 100 / data.directions.south.total) : 0;
@@ -107,7 +128,11 @@
                 <Layout style={{minHeight: '100vh', background: '#f8fafc'}}>
                     <div className="header">
                         <div className="nav-brand">VNPOST HUẾ <span style={{color: '#f97316'}}>D.O.C</span></div>
-                        <Space><Button type="primary" onClick={handleUpload} style={{background: '#003a8c'}}>NHẬP DỮ LIỆU</Button> <Button icon={<span>🔄</span>} onClick={fetchAll} /></Space>
+                        <Space>
+                            <Button icon={<span>📄</span>} onClick={generateReport}>SOẠN BÁO CÁO ĐIỀU HÀNH</Button>
+                            <Button type="primary" onClick={handleUpload} style={{background: '#003a8c'}}>NHẬP DỮ LIỆU</Button> 
+                            <Button icon={<span>🔄</span>} onClick={fetchAll} />
+                        </Space>
                     </div>
 
                     <div className="main-container">
@@ -125,7 +150,6 @@
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #f59e0b'}}><div className="card-inner"><div className="kpi-label">Đang tồn đọng</div><div className="kpi-value" style={{color: '#f59e0b'}}>{(data.kpis.pending).toLocaleString()}</div></div></div></Col>
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #ef4444'}}><div className="card-inner"><div className="kpi-label">Vi phạm SLA</div><div className="kpi-value" style={{color: '#ef4444'}}>{(data.kpis.sla).toLocaleString()}</div></div></div></Col>
 
-                            {/* TRI-DIRECTIONAL PANEL */}
                             <Col span={8}>
                                 <div className="executive-card"><div className="card-inner">
                                     <Statistic title="Hướng Bắc" value={data.directions.north.total} />
@@ -200,6 +224,21 @@
                             </Col>
                         </Row>
                     </div>
+
+                    <Modal 
+                        title="BÁO CÁO ĐIỀU HÀNH TỰ ĐỘNG (TTVH GOVERNANCE)" 
+                        open={reportModal} 
+                        onCancel={() => setReportModal(false)}
+                        width={800}
+                        footer={[
+                            <Button key="back" onClick={() => setReportModal(false)}>ĐÓNG</Button>,
+                            <Button key="submit" type="primary" onClick={copyReport} style={{background: '#003a8c'}}>SAO CHÉP BÁO CÁO</Button>
+                        ]}
+                    >
+                        <div className="report-preview">
+                            {reportContent}
+                        </div>
+                    </Modal>
                 </Layout>
             );
         };
