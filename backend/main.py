@@ -21,27 +21,29 @@ def log_terminal(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
     sys.stdout.flush()
 
+def clean_text_nfc(text):
+    if not text or pd.isna(text): return ""
+    return unicodedata.normalize('NFC', str(text)).strip()
+
 def clean_text_lower(text):
     if not text or pd.isna(text): return ""
-    text = unicodedata.normalize('NFC', str(text))
-    return text.lower().strip()
+    return unicodedata.normalize('NFC', str(text)).lower().strip()
 
 def parse_dt(val):
-    """Defensive Datetime Parsing for Excel (Strings, Objects, Serial Numbers)"""
     if pd.isna(val) or val == "": return None
     if isinstance(val, datetime): return val
     if isinstance(val, (int, float)):
-        # Handle Excel Serial Date
         try: return datetime(1899, 12, 30) + timedelta(days=val)
         except: return None
     if isinstance(val, str):
+        val = val.strip()
         for fmt in ('%Y-%m-%d %H:%M:%S', '%d/%m/%Y %H:%M:%S', '%Y-%m-%d', '%d/%m/%Y'):
             try: return datetime.strptime(val, fmt)
             except: continue
     return None
 
 def find_best_col(headers, target_keywords, exclude_keywords=[]):
-    headers_lower = [h.lower() for h in headers]
+    headers_lower = [clean_text_lower(h) for h in headers]
     for i, h in enumerate(headers_lower):
         if h in target_keywords: return i
     for i, h in enumerate(headers_lower):
@@ -60,10 +62,9 @@ def get_db_conn():
 def init_db():
     conn = get_db_conn()
     cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS import_sessions (session_id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT, imported_at DATETIME, total_rows INTEGER, success_count INTEGER, status TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS import_sessions (session_id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT, imported_at DATETIME, total_rows INTEGER, status TEXT)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS orders (
-        tracking_id TEXT, recipient_address TEXT, post_office_name TEXT, province TEXT, 
-        acceptance_date TEXT, ttp_first_date TEXT, result_first TEXT, result_final TEXT, status TEXT, aging INTEGER, is_sla_violation BOOLEAN, 
+        tracking_id TEXT, acceptance_date TEXT, ttp_first_date TEXT, result_first TEXT, result_final TEXT, status TEXT, aging INTEGER, is_sla_violation BOOLEAN, 
         session_id INTEGER, PRIMARY KEY (tracking_id, session_id))''')
     conn.commit()
     conn.close()
@@ -72,8 +73,8 @@ init_db()
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"=== [SLA HARDENING] START: {file.filename} ===")
-    file_path = os.path.join(UPLOAD_DIR, f"sla_hard_{datetime.now().strftime('%H%M%S')}_{file.filename}")
+    log_terminal(f"--- [DEEP FORENSIC] START: {file.filename} ---")
+    file_path = os.path.join(UPLOAD_DIR, f"debug_{datetime.now().strftime('%H%M%S')}_{file.filename}")
     try:
         content = await file.read()
         with open(file_path, "wb") as f: f.write(content)
@@ -81,100 +82,117 @@ async def upload_excel(file: UploadFile = File(...)):
         with pd.ExcelFile(file_path, engine='openpyxl') as xls:
             target_sheet = 'DanhSach' if 'DanhSach' in xls.sheet_names else xls.sheet_names[0]
             df_raw_10 = pd.read_excel(xls, sheet_name=target_sheet, header=None, nrows=10)
+            
             header_idx = 0
             for i, row in df_raw_10.iterrows():
-                row_str = " ".join([str(val).lower() for val in row if not pd.isna(val)])
+                row_str = " ".join([clean_text_lower(val) for val in row if not pd.isna(val)])
                 if any(k in row_str for k in ["số hiệu", "mã bưu gửi", "kết quả"]):
                     header_idx = i
                     break
+            
             df = pd.read_excel(xls, sheet_name=target_sheet, header=header_idx)
-            df.columns = [str(h).strip() for h in df.columns]
+            df.columns = [clean_text_nfc(h) for h in df.columns]
 
         mapping = {
             "tracking_id": find_best_col(df.columns, ["số hiệu", "mã bưu gửi"]),
             "acceptance_date": find_best_col(df.columns, ["ngày chấp nhận", "ngày gửi"]),
             "ttp_first_date": find_best_col(df.columns, ["thời gian nhập ttp lần đầu", "thời gian nhập lần đầu"]),
             "result_first": find_best_col(df.columns, ["kết quả phát lần đầu", "kết quả lần đầu"]),
-            "result_final": find_best_col(df.columns, ["kết quả phát cuối cùng", "kết quả phát lần cuối"]),
-            "province": find_best_col(df.columns, ["tỉnh"], ["mã"]),
-            "post_office": find_best_col(df.columns, ["bcvh", "bưu cục vận hành"]),
-            "address": find_best_col(df.columns, ["địa chỉ"])
+            "result_final": find_best_col(df.columns, ["kết quả phát cuối cùng", "kết quả phát lần cuối"])
         }
 
         df = df.drop_duplicates(subset=[df.columns[mapping["tracking_id"]]], keep='last')
         
+        # DEBUG COUNTERS
+        d_parsed_accept = 0
+        d_parsed_ttp = 0
+        d_first_result_found = 0
+        d_case1 = 0
+        d_case2 = 0
+        d_success = 0
+        samples = []
+        
+        now = datetime.now()
+        processed_orders = []
+        
+        for _, row in df.iterrows():
+            tid = str(row.iloc[mapping["tracking_id"]]).strip()
+            if not tid: continue
+            
+            # PARSING
+            dt_accept = parse_dt(row.iloc[mapping["acceptance_date"]])
+            dt_ttp = parse_dt(row.iloc[mapping["ttp_first_date"]]) if mapping["ttp_first_date"] is not None else None
+            res_first = clean_text_lower(row.iloc[mapping["result_first"]])
+            res_final = clean_text_lower(row.iloc[mapping["result_final"]])
+            
+            if dt_accept: d_parsed_accept += 1
+            if dt_ttp: d_parsed_ttp += 1
+            if res_first: d_first_result_found += 1
+            
+            # SLA LOGIC
+            is_sla = False
+            # CASE 1
+            if dt_accept and dt_ttp and (dt_ttp - dt_accept).days > 3:
+                is_sla = True
+                d_case1 += 1
+            # CASE 2
+            if not is_sla and dt_accept and "chưa có tt phát" in res_first and (now - dt_accept).days > 3:
+                is_sla = True
+                d_case2 += 1
+            
+            is_success = "đã phát thành công" in res_final
+            if is_success: d_success += 1
+            
+            aging = (now - dt_accept).days if dt_accept else 0
+            
+            if len(samples) < 5:
+                samples.append({
+                    "tracking_id": tid,
+                    "accept_date": str(dt_accept) if dt_accept else "NULL",
+                    "first_ttp": str(dt_ttp) if dt_ttp else "NULL",
+                    "first_result": res_first or "NULL",
+                    "aging_days": int(aging),
+                    "is_sla": is_sla
+                })
+            
+            processed_orders.append((
+                tid, str(dt_accept) if dt_accept else "", str(dt_ttp) if dt_ttp else "",
+                res_first, res_final, 'Thành công' if is_success else 'Chưa thành công', 
+                int(aging), is_sla, 0 # session_id will be added
+            ))
+
+        # LOG BLOCK
+        print("\n================ SLA DEBUG ================")
+        print(f"TOTAL_ROWS:          {len(df)}")
+        print(f"PARSED_ACCEPT_DATE:  {d_parsed_accept}")
+        print(f"PARSED_FIRST_TTP:    {d_parsed_ttp}")
+        print(f"FIRST_RESULT_FOUND:  {d_first_result_found}")
+        print(f"CASE_1_SLA_COUNT:    {d_case1}")
+        print(f"CASE_2_SLA_COUNT:    {d_case2}")
+        print(f"FINAL_SLA_COUNT:     {d_case1 + d_case2}")
+        print(f"SUCCESS_COUNT:       {d_success}")
+        print(f"PENDING_COUNT:       {len(df) - d_success}")
+        print("===========================================\n")
+        
+        print("SAMPLE ROWS (JSON):")
+        print(json.dumps(samples, indent=2, ensure_ascii=False))
+        print("-------------------------------------------\n")
+
         conn = get_db_conn()
         cursor = conn.cursor()
         try:
             cursor.execute("BEGIN TRANSACTION")
-            cursor.execute('INSERT INTO import_sessions (filename, imported_at, total_rows, status) VALUES (?, ?, ?, ?)', (file.filename, datetime.now().isoformat(), len(df), "PROCESSING"))
-            session_id = cursor.lastrowid
-            
-            processed_orders = []
-            now = datetime.now()
-            
-            # DEBUG COUNTERS
-            d_accept_count = 0
-            d_ttp_first_count = 0
-            d_case1_count = 0
-            d_case2_count = 0
-            
-            for _, row in df.iterrows():
-                tid = str(row.iloc[mapping["tracking_id"]]).strip()
-                if not tid: continue
-                
-                # DT PARSING
-                dt_accept = parse_dt(row.iloc[mapping["acceptance_date"]])
-                dt_ttp_first = parse_dt(row.iloc[mapping["ttp_first_date"]]) if mapping["ttp_first_date"] is not None else None
-                
-                if dt_accept: d_accept_count += 1
-                if dt_ttp_first: d_ttp_first_count += 1
-                
-                # SLA LOGIC
-                is_sla_violation = False
-                res_first = clean_text_lower(row.iloc[mapping["result_first"]])
-                
-                # CASE 1: (TTP Lần đầu - Chấp nhận) > 3 days
-                if dt_accept and dt_ttp_first:
-                    if (dt_ttp_first - dt_accept).days > 3:
-                        is_sla_violation = True
-                        d_case1_count += 1
-                
-                # CASE 2: "Chưa có TT phát" AND (NOW - Chấp nhận) > 3 days
-                if not is_sla_violation and dt_accept and "chưa có tt phát" in res_first:
-                    if (now - dt_accept).days > 3:
-                        is_sla_violation = True
-                        d_case2_count += 1
-                
-                # GENERAL STATS
-                res_final = clean_text_lower(row.iloc[mapping["result_final"]])
-                is_success = "đã phát thành công" in res_final
-                aging = (now - dt_accept).days if dt_accept else 0
-                
-                processed_orders.append((
-                    tid, str(row.iloc[mapping["address"]]) if mapping["address"] is not None else "", 
-                    str(row.iloc[mapping["post_office"]]), str(row.iloc[mapping["province"]]) if mapping["province"] is not None else "", 
-                    str(dt_accept) if dt_accept else "", str(dt_ttp_first) if dt_ttp_first else "",
-                    res_first, res_final, 'Thành công' if is_success else 'Chưa thành công', 
-                    max(0, int(aging)), is_sla_violation, session_id
-                ))
-
-            log_terminal(f"DEBUG -> parsed_accept_date_count: {d_accept_count}")
-            log_terminal(f"DEBUG -> parsed_ttp_first_count: {d_ttp_first_count}")
-            log_terminal(f"DEBUG -> sla_case_1_count: {d_case1_count}")
-            log_terminal(f"DEBUG -> sla_case_2_count: {d_case2_count}")
-            log_terminal(f"DEBUG -> final_sla_count: {d_case1_count + d_case2_count}")
-
-            cursor.execute('UPDATE import_sessions SET success_count = ?, status = ? WHERE session_id = ?', (0, "SUCCESS", session_id))
-            cursor.executemany('INSERT OR REPLACE INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', processed_orders)
+            cursor.execute('INSERT INTO import_sessions (filename, imported_at, total_rows, status) VALUES (?, ?, ?, ?)', (file.filename, datetime.now().isoformat(), len(df), "SUCCESS"))
+            sid = cursor.lastrowid
+            final_data = [list(r)[:-1] + [sid] for r in processed_orders]
+            cursor.executemany('INSERT OR REPLACE INTO orders VALUES (?,?,?,?,?,?,?,?,?)', final_data)
             cursor.execute("COMMIT")
-            return {"message": "SLA Engine Hardened", "session_id": session_id}
-        except Exception as e:
-            cursor.execute("ROLLBACK")
-            raise e
+            return {"message": "Forensic Logged", "sid": sid}
         finally: conn.close()
+
     except Exception as e:
         log_terminal(f"ERR: {str(e)}")
+        traceback.print_exc()
         return JSONResponse(status_code=500, content={"detail": str(e)})
     finally:
         if os.path.exists(file_path): os.remove(file_path)
@@ -183,7 +201,7 @@ async def upload_excel(file: UploadFile = File(...)):
 async def get_stats():
     conn = get_db_conn()
     cursor = conn.cursor()
-    session = cursor.execute("SELECT * FROM import_sessions WHERE status='SUCCESS' ORDER BY session_id DESC LIMIT 1").fetchone()
+    session = cursor.execute("SELECT session_id FROM import_sessions ORDER BY session_id DESC LIMIT 1").fetchone()
     if not session: return {"error": "No Data"}
     sid = session['session_id']
     kpis = cursor.execute('SELECT COUNT(*) as total, SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as success, SUM(CASE WHEN is_sla_violation=1 THEN 1 ELSE 0 END) as sla FROM orders WHERE session_id=?', (sid,)).fetchone()
