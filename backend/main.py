@@ -18,7 +18,7 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "backend", "temp_uploads")
 TEMPLATE_PATH = os.path.join(BASE_DIR, "backend", "report_template.md")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# GEOGRAPHIC MAPPING (CALIBRATED V3.9)
+# GEOGRAPHIC MAPPING (FORENSIC V4.0)
 NORTH_PROVINCES = [
     "Hà Nội", "Hải Phòng", "Bắc Ninh", "Thái Nguyên", "Vĩnh Phúc", "Hải Dương", "Quảng Ninh", "Ninh Bình", 
     "Nam Định", "Hà Nam", "Hòa Bình", "Sơn La", "Điện Biên", "Lai Châu", "Lào Cai", "Yên Bái", "Phú Thọ", 
@@ -29,21 +29,6 @@ def log_terminal(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
     sys.stdout.flush()
 
-def verify_import_integrity(sid):
-    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
-    try:
-        total = cursor.execute("SELECT COUNT(*) as c FROM orders WHERE session_id=?", (sid,)).fetchone()['c']
-        success = cursor.execute("SELECT COUNT(*) as c FROM orders WHERE session_id=? AND status='Thành công'", (sid,)).fetchone()['c']
-        sla = cursor.execute("SELECT COUNT(*) as c FROM orders WHERE session_id=? AND is_sla_violation=1", (sid,)).fetchone()['c']
-        hue = cursor.execute("SELECT COUNT(*) as c FROM orders WHERE session_id=? AND (province LIKE '%Huế%' OR province LIKE '%Hue%')", (sid,)).fetchone()['c']
-        north_where = " OR ".join([f"province LIKE '%{p}%'" for p in NORTH_PROVINCES])
-        north = cursor.execute(f"SELECT COUNT(*) as c FROM orders WHERE session_id=? AND NOT (province LIKE '%Huế%' OR province LIKE '%Hue%') AND ({north_where})", (sid,)).fetchone()['c']
-        south = total - hue - north
-        verification_report = {"session_id": sid, "metrics": {"total": total, "success": success, "pending": total - success, "sla": sla, "north": north, "south": south, "hue_local": hue}, "status": "PASS"}
-        print("\n" + "="*50 + "\n📊 CALIBRATED REPORT V3.9\n" + json.dumps(verification_report, indent=2) + "\n" + "="*50 + "\n")
-    except Exception as e: log_terminal(f"❌ VERIFICATION CRASHED: {str(e)}")
-    finally: conn.close()
-
 def clean_text_nfc(text):
     if not text or pd.isna(text): return ""
     return unicodedata.normalize('NFC', str(text)).strip()
@@ -51,6 +36,63 @@ def clean_text_nfc(text):
 def clean_text_lower(text):
     if not text or pd.isna(text): return ""
     return unicodedata.normalize('NFC', str(text)).lower().strip()
+
+def run_forensic_trace(sid):
+    """
+    DEEP FORENSIC TRACE V4.0
+    Ensures Total = North + South + Intra with zero overlap.
+    """
+    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+    try:
+        total = cursor.execute("SELECT COUNT(*) as c FROM orders WHERE session_id=?", (sid,)).fetchone()['c']
+        success_global = cursor.execute("SELECT COUNT(*) as c FROM orders WHERE session_id=? AND status='Thành công'", (sid,)).fetchone()['c']
+        
+        # INTRA HUE
+        intra_rows = cursor.execute("SELECT COUNT(*) as c, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as s FROM orders WHERE session_id=? AND (province LIKE '%Huế%' OR province LIKE '%Hue%')", (sid,)).fetchone()
+        i_tot, i_suc = intra_rows['c'], intra_rows['s'] or 0
+        
+        # NORTH
+        north_cond = " OR ".join([f"province LIKE '%{p}%'" for p in NORTH_PROVINCES])
+        north_rows = cursor.execute(f"SELECT COUNT(*) as c, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as s FROM orders WHERE session_id=? AND NOT (province LIKE '%Huế%' OR province LIKE '%Hue%') AND ({north_cond})", (sid,)).fetchone()
+        n_tot, n_suc = north_rows['c'], north_rows['s'] or 0
+        
+        # SOUTH (THE REST)
+        south_rows = cursor.execute(f"SELECT COUNT(*) as c, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as s FROM orders WHERE session_id=? AND NOT (province LIKE '%Huế%' OR province LIKE '%Hue%') AND NOT ({north_cond})", (sid,)).fetchone()
+        s_tot, s_suc = south_rows['c'], south_rows['s'] or 0
+        
+        trace_report = {
+            "GLOBAL_CONSISTENCY": {
+                "TOTAL_DASHBOARD": total,
+                "SUM_OF_REGIONS": i_tot + n_tot + s_tot,
+                "MATCH": total == (i_tot + n_tot + s_tot)
+            },
+            "NORTH_TRACE": {
+                "accepted_total": n_tot,
+                "success_total": n_suc,
+                "pending_total": n_tot - n_suc
+            },
+            "SOUTH_TRACE": {
+                "accepted_total": s_tot,
+                "success_total": s_suc,
+                "pending_total": s_tot - s_suc
+            },
+            "INTRA_TRACE": {
+                "accepted_total": i_tot,
+                "success_total": i_suc,
+                "pending_total": i_tot - i_suc
+            }
+        }
+        
+        print("\n" + "!"*60)
+        print("🔥 EXECUTIVE FORENSIC JSON DEBUG (V4.0)")
+        print("!"*60)
+        print(json.dumps(trace_report, indent=2))
+        print("!"*60 + "\n")
+        
+    except Exception as e:
+        log_terminal(f"❌ FORENSIC CRASHED: {str(e)}")
+    finally:
+        conn.close()
 
 def parse_dt(val):
     if pd.isna(val) or val == "": return None
@@ -84,8 +126,8 @@ def get_db_conn():
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"--- [CALIBRATION] IMPORT: {file.filename} ---")
-    file_path = os.path.join(UPLOAD_DIR, f"cal_{datetime.now().strftime('%H%M%S')}_{file.filename}")
+    log_terminal(f"--- [FORENSIC] IMPORT: {file.filename} ---")
+    file_path = os.path.join(UPLOAD_DIR, f"forensic_{datetime.now().strftime('%H%M%S')}_{file.filename}")
     try:
         content = await file.read()
         with open(file_path, "wb") as f: f.write(content)
@@ -111,9 +153,6 @@ async def upload_excel(file: UploadFile = File(...)):
             "post_office": find_best_col(df.columns, ["bcvh", "tên bcvh", "bưu cục vận hành"])
         }
 
-        # NO DROP DUPLICATES to match user's manual count if they use raw counts
-        # df = df.drop_duplicates(subset=[df.columns[mapping["tracking_id"]]], keep='last')
-        
         now = datetime.now()
         conn = get_db_conn()
         cursor = conn.cursor()
@@ -135,7 +174,10 @@ async def upload_excel(file: UploadFile = File(...)):
                 processed.append((tid, clean_text_nfc(row.iloc[mapping["province"]]), clean_text_nfc(row.iloc[mapping["post_office"]]), str(dt_acc) if dt_acc else "", str(dt_ttp) if dt_ttp else "", res_first, res_final, 'Thành công' if is_success else 'Chưa thành công', int(aging), is_sla, sid))
             cursor.executemany('INSERT INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?)', processed)
             cursor.execute("COMMIT")
-            verify_import_integrity(sid)
+            
+            # RUN DEEP FORENSIC TRACE
+            run_forensic_trace(sid)
+            
             return {"message": "Success", "sid": sid}
         finally: conn.close()
     except Exception as e:
@@ -148,31 +190,11 @@ async def upload_excel(file: UploadFile = File(...)):
 async def get_acceptance_trend():
     conn = get_db_conn(); cursor = conn.cursor()
     session = cursor.execute("SELECT session_id FROM import_sessions ORDER BY session_id DESC LIMIT 1").fetchone()
-    if not session: return {"data": [], "kpis": {}}
+    if not session: return {"data": []}
     sid = session['session_id']
-    query = '''
-        SELECT 
-            SUBSTR(acceptance_date, 1, 10) as date,
-            COUNT(*) as total,
-            SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as success,
-            SUM(CASE WHEN is_sla_violation=1 THEN 1 ELSE 0 END) as sla
-        FROM orders 
-        WHERE session_id = ? AND acceptance_date != ""
-        GROUP BY date ORDER BY date ASC
-    '''
-    rows = cursor.execute(query, (sid,)).fetchall()
+    rows = cursor.execute("SELECT SUBSTR(acceptance_date, 1, 10) as date, COUNT(*) as total, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as success, SUM(CASE WHEN is_sla_violation=1 THEN 1 ELSE 0 END) as sla FROM orders WHERE session_id = ? AND acceptance_date != '' GROUP BY date ORDER BY date ASC", (sid,)).fetchall()
     conn.close()
-    trend_data = []
-    for r in rows:
-        d = r['date']; tot = r['total']; suc = r['success']; sla = r['sla']
-        trend_data.append({
-            "date": d,
-            "total": tot,
-            "success": suc,
-            "success_rate": round(suc*100/tot) if tot>0 else 0,
-            "sla_rate": round(sla*100/tot) if tot>0 else 0
-        })
-    return {"data": trend_data}
+    return {"data": [{"date": r['date'], "total": r['total'], "success": r['success'], "success_rate": round(r['success']*100/r['total']) if r['total']>0 else 0, "sla_rate": round(r['sla']*100/r['total']) if r['total']>0 else 0} for r in rows]}
 
 @app.get("/api/dashboard/stats")
 async def get_stats():
@@ -184,11 +206,24 @@ async def get_stats():
     intra = cursor.execute("SELECT COUNT(*) as t, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as s FROM orders WHERE session_id=? AND (province LIKE '%Huế%' OR province LIKE '%Hue%')", (sid,)).fetchone()
     north_where = " OR ".join([f"province LIKE '%{p}%'" for p in NORTH_PROVINCES])
     north = cursor.execute(f"SELECT COUNT(*) as t, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as s FROM orders WHERE session_id=? AND NOT (province LIKE '%Huế%' OR province LIKE '%Hue%') AND ({north_where})", (sid,)).fetchone()
+    
+    # RE-CALCULATE SOUTH EXPLICITLY
+    south = cursor.execute(f"SELECT COUNT(*) as t, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as s FROM orders WHERE session_id=? AND NOT (province LIKE '%Huế%' OR province LIKE '%Hue%') AND NOT ({north_where})", (sid,)).fetchone()
+    
     conn.close()
     t, s = kpis['t'], kpis['s']
     it, isuc = intra['t'] or 0, intra['s'] or 0
     nt, nsuc = north['t'] or 0, north['s'] or 0
-    return {"kpis": {"total": t, "success": s, "pending": t - s, "sla": kpis['sla']}, "directions": {"intra": {"total": it, "success": isuc}, "north": {"total": nt, "success": nsuc}, "south": {"total": t - it - nt, "success": s - isuc - nsuc}}}
+    st, ssuc = south['t'] or 0, south['s'] or 0
+    
+    return {
+        "kpis": {"total": t, "success": s, "pending": t - s, "sla": kpis['sla']}, 
+        "directions": {
+            "intra": {"total": it, "success": isuc}, 
+            "north": {"total": nt, "success": nsuc}, 
+            "south": {"total": st, "success": ssuc}
+        }
+    }
 
 @app.get("/api/dashboard/province-performance")
 async def get_province_performance():
