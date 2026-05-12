@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V2.6</title>
+    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V2.9</title>
     <!-- LIBRARIES -->
     <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
@@ -27,6 +27,7 @@
         .card-inner { padding: 20px; }
         .kpi-value { font-size: 32px; font-weight: 700; color: var(--primary); line-height: 1.1; }
         .kpi-label { font-size: 10px; text-transform: uppercase; color: var(--text-sub); letter-spacing: 1px; margin-bottom: 6px; font-weight: 600; }
+        .kpi-sub { font-size: 13px; font-weight: 600; margin-top: 4px; }
         .ant-table-thead > tr > th { background: var(--primary-dark) !important; color: #ffffff !important; font-size: 10px !important; text-transform: uppercase; }
         .section-header { display: flex; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border); background: #fafafa; }
         .section-indicator { width: 4px; height: 18px; background: var(--primary); border-radius: 2px; margin-right: 12px; }
@@ -83,7 +84,7 @@
                     const file = e.target.files[0];
                     if (!file) return;
                     const formData = new FormData(); formData.append('file', file);
-                    const hide = message.loading('Đang xử lý Tam phân Bắc-Nam-Huế...', 0);
+                    const hide = message.loading('Đang xử lý dữ liệu Logistics...', 0);
                     try {
                         const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: formData });
                         if (res.ok) { message.success("Sync Success!"); fetchAll(); }
@@ -95,11 +96,12 @@
             };
 
             if (loading && !data) return <div style={{padding: 100, textAlign: 'center'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#003a8c" /></div>;
-            if (!data) return <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống V2.6" extra={<Button type="primary" onClick={handleUpload}>LOAD DATA</Button>} /></div>;
+            if (!data) return <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống V2.9" extra={<Button type="primary" onClick={handleUpload}>IMPORT DATA</Button>} /></div>;
 
             const nRate = data.directions.north.total > 0 ? Math.round(data.directions.north.success * 100 / data.directions.north.total) : 0;
             const sRate = data.directions.south.total > 0 ? Math.round(data.directions.south.success * 100 / data.directions.south.total) : 0;
             const iRate = data.directions.intra.total > 0 ? Math.round(data.directions.intra.success * 100 / data.directions.intra.total) : 0;
+            const totalSuccessRate = data.kpis.total > 0 ? Math.round(data.kpis.success * 100 / data.kpis.total) : 0;
 
             return (
                 <Layout style={{minHeight: '100vh', background: '#f8fafc'}}>
@@ -110,42 +112,40 @@
 
                     <div className="main-container">
                         <Row gutter={[20, 20]}>
-                            {/* KPI SECTION */}
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #003a8c'}}><div className="card-inner"><div className="kpi-label">Tổng sản lượng VIP</div><div className="kpi-value">{(data.kpis.total).toLocaleString()}</div></div></div></Col>
-                            <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #059669'}}><div className="card-inner"><div className="kpi-label">Thành công</div><div className="kpi-value" style={{color: '#059669'}}>{(data.kpis.success).toLocaleString()}</div></div></div></Col>
+                            <Col span={6}>
+                                <div className="executive-card" style={{borderTop: '4px solid #059669'}}>
+                                    <div className="card-inner">
+                                        <div className="kpi-label">Phát thành công</div>
+                                        <div className="kpi-value" style={{color: '#059669'}}>{(data.kpis.success).toLocaleString()}</div>
+                                        <div className="kpi-sub" style={{color: '#059669'}}>Tỷ lệ: {totalSuccessRate}%</div>
+                                    </div>
+                                </div>
+                            </Col>
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #f59e0b'}}><div className="card-inner"><div className="kpi-label">Đang tồn đọng</div><div className="kpi-value" style={{color: '#f59e0b'}}>{(data.kpis.pending).toLocaleString()}</div></div></div></Col>
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #ef4444'}}><div className="card-inner"><div className="kpi-label">Vi phạm SLA</div><div className="kpi-value" style={{color: '#ef4444'}}>{(data.kpis.sla).toLocaleString()}</div></div></div></Col>
 
                             {/* TRI-DIRECTIONAL PANEL */}
                             <Col span={8}>
-                                <div className="executive-card">
-                                    <div className="section-header"><div className="section-indicator"></div><div className="section-title">Trục Điều hành Hướng Bắc</div></div>
-                                    <div className="card-inner">
-                                        <Statistic title="Sản lượng" value={data.directions.north.total} />
-                                        <Progress percent={nRate} strokeColor={getPerformanceColor(nRate)} style={{marginTop: 8}} />
-                                        <Text strong style={{fontSize: 11, color: getPerformanceColor(nRate)}}>{nRate}% Thành công</Text>
-                                    </div>
-                                </div>
+                                <div className="executive-card"><div className="card-inner">
+                                    <Statistic title="Hướng Bắc" value={data.directions.north.total} />
+                                    <Progress percent={nRate} strokeColor={getPerformanceColor(nRate)} style={{marginTop: 8}} />
+                                    <Text strong style={{fontSize: 11, color: getPerformanceColor(nRate)}}>{nRate}% Thành công</Text>
+                                </div></div>
                             </Col>
                             <Col span={8}>
-                                <div className="executive-card" style={{borderColor: '#722ed1'}}>
-                                    <div className="section-header" style={{background: '#f9f0ff'}}><div className="section-indicator" style={{background: '#722ed1'}}></div><div className="section-title" style={{color: '#722ed1'}}>Trục Điều hành Nội tỉnh (Huế)</div></div>
-                                    <div className="card-inner">
-                                        <Statistic title="Sản lượng" value={data.directions.intra.total} valueStyle={{color: '#722ed1'}} />
-                                        <Progress percent={iRate} strokeColor="#722ed1" style={{marginTop: 8}} />
-                                        <Text strong style={{fontSize: 11, color: '#722ed1'}}>{iRate}% Thành công</Text>
-                                    </div>
-                                </div>
+                                <div className="executive-card" style={{borderColor: '#722ed1'}}><div className="card-inner">
+                                    <Statistic title="Nội tỉnh (Huế)" value={data.directions.intra.total} valueStyle={{color: '#722ed1'}} />
+                                    <Progress percent={iRate} strokeColor="#722ed1" style={{marginTop: 8}} />
+                                    <Text strong style={{fontSize: 11, color: '#722ed1'}}>{iRate}% Thành công</Text>
+                                </div></div>
                             </Col>
                             <Col span={8}>
-                                <div className="executive-card">
-                                    <div className="section-header"><div className="section-indicator" style={{background: '#f97316'}}></div><div className="section-title">Trục Điều hành Hướng Nam</div></div>
-                                    <div className="card-inner">
-                                        <Statistic title="Sản lượng" value={data.directions.south.total} />
-                                        <Progress percent={sRate} strokeColor={getPerformanceColor(sRate)} style={{marginTop: 8}} />
-                                        <Text strong style={{fontSize: 11, color: getPerformanceColor(sRate)}}>{sRate}% Thành công</Text>
-                                    </div>
-                                </div>
+                                <div className="executive-card"><div className="card-inner">
+                                    <Statistic title="Hướng Nam" value={data.directions.south.total} />
+                                    <Progress percent={sRate} strokeColor={getPerformanceColor(sRate)} style={{marginTop: 8}} />
+                                    <Text strong style={{fontSize: 11, color: getPerformanceColor(sRate)}}>{sRate}% Thành công</Text>
+                                </div></div>
                             </Col>
 
                             <Col span={24}>
@@ -153,18 +153,16 @@
                                     <div className="section-header"><div className="section-indicator"></div><div className="section-title">Ma trận Hiệu suất Tam phân (Bắc - Nam - Nội tỉnh)</div></div>
                                     <div className="card-inner">
                                         <Table dataSource={provinceData} columns={[
-                                            { title: 'PHÂN LOẠI', dataIndex: 'direction', width: 120, render: v => (
-                                                <Tag color={v === 'Bắc' ? 'blue' : v === 'Nội tỉnh' ? 'purple' : 'orange'}>{v}</Tag>
-                                            )},
+                                            { title: 'PHÂN LOẠI', dataIndex: 'direction', width: 120, render: v => <Tag color={v === 'Bắc' ? 'blue' : v === 'Nội tỉnh' ? 'purple' : 'orange'}>{v}</Tag> },
                                             { title: 'TỈNH PHÁT', dataIndex: 'name', width: 180, render: t => <Text strong>{t}</Text> },
-                                            { title: 'SẢN LƯỢNG', dataIndex: 'total', align: 'right', width: 120 },
-                                            { title: 'TỶ LỆ THÀNH CÔNG', dataIndex: 'success_rate', width: 250, render: v => (
+                                            { title: 'SẢN LƯỢNG', dataIndex: 'total', align: 'right', width: 100 },
+                                            { title: 'THÀNH CÔNG (%)', dataIndex: 'success_rate', width: 220, render: v => (
                                                 <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
                                                     <Progress percent={v} size="small" showInfo={false} strokeColor={getPerformanceColor(v)} style={{flex: 1}} />
                                                     <Text strong style={{fontSize: 11, width: 35, color: getPerformanceColor(v)}}>{v}%</Text>
                                                 </div>
                                             )},
-                                            { title: 'RỦI RO SLA (%)', dataIndex: 'sla_rate', width: 200, render: v => (
+                                            { title: 'RỦI RO SLA (%)', dataIndex: 'sla_rate', width: 220, render: v => (
                                                 <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
                                                     <Progress percent={v} size="small" showInfo={false} strokeColor="#ef4444" style={{flex: 1}} />
                                                     <Text strong style={{fontSize: 11, width: 35, color: v > 10 ? '#ef4444' : '#64748b'}}>{v}%</Text>
