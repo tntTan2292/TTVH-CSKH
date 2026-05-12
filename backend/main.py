@@ -46,6 +46,15 @@ def parse_dt(val):
             except: continue
     return None
 
+def find_best_col(headers, target_keywords, exclude_keywords=[]):
+    headers_lower = [clean_text_lower(h) for h in headers]
+    for i, h in enumerate(headers_lower):
+        if h in target_keywords: return i
+    for i, h in enumerate(headers_lower):
+        if any(tk in h for tk in target_keywords):
+            if not any(ek in h for ek in exclude_keywords): return i
+    return None
+
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -56,8 +65,8 @@ def get_db_conn():
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"--- [FLOW INTEL IMPORT] START: {file.filename} ---")
-    file_path = os.path.join(UPLOAD_DIR, f"flow_{datetime.now().strftime('%H%M%S')}_{file.filename}")
+    log_terminal(f"--- [FINAL DEPLOY] START: {file.filename} ---")
+    file_path = os.path.join(UPLOAD_DIR, f"final_{datetime.now().strftime('%H%M%S')}_{file.filename}")
     try:
         content = await file.read()
         with open(file_path, "wb") as f: f.write(content)
@@ -74,12 +83,13 @@ async def upload_excel(file: UploadFile = File(...)):
             df.columns = [clean_text_nfc(h) for h in df.columns]
 
         mapping = {
-            "tracking_id": next((i for i, h in enumerate(df.columns) if any(k in h.lower() for k in ["số hiệu", "mã bưu gửi"])), 0),
-            "acceptance_date": next((i for i, h in enumerate(df.columns) if any(k in h.lower() for k in ["ngày chấp nhận", "ngày gửi"])), 1),
-            "result_first": next((i for i, h in enumerate(df.columns) if "lần đầu" in h.lower()), 2),
-            "result_final": next((i for i, h in enumerate(df.columns) if "cuối cùng" in h.lower() or "lần cuối" in h.lower()), 3),
-            "province": next((i for i, h in enumerate(df.columns) if "tỉnh" in h.lower() and "mã" not in h.lower()), 4),
-            "post_office": next((i for i, h in enumerate(df.columns) if "bcvh" in h.lower() or "bưu cục vận hành" in h.lower()), 5)
+            "tracking_id": find_best_col(df.columns, ["số hiệu", "mã bưu gửi"]),
+            "acceptance_date": find_best_col(df.columns, ["ngày chấp nhận", "ngày gửi"]),
+            "ttp_first_date": find_best_col(df.columns, ["thời gian nhập ttp lần đầu", "thời gian nhập lần đầu"]),
+            "result_first": find_best_col(df.columns, ["kết quả phát lần đầu", "kết quả lần đầu"]),
+            "result_final": find_best_col(df.columns, ["kết quả phát cuối cùng", "kết quả phát lần cuối"]),
+            "province": find_best_col(df.columns, ["tỉnh"], ["mã"]),
+            "post_office": find_best_col(df.columns, ["bcvh", "tên bcvh", "bưu cục vận hành"])
         }
 
         df = df.drop_duplicates(subset=[df.columns[mapping["tracking_id"]]], keep='last')
@@ -90,19 +100,18 @@ async def upload_excel(file: UploadFile = File(...)):
             cursor.execute("BEGIN TRANSACTION")
             cursor.execute('INSERT INTO import_sessions (filename, imported_at, total_rows, status) VALUES (?, ?, ?, ?)', (file.filename, now.isoformat(), len(df), "SUCCESS"))
             sid = cursor.lastrowid
-            
             processed = []
             for _, row in df.iterrows():
                 tid = str(row.iloc[mapping["tracking_id"]]).strip()
                 if not tid: continue
                 dt_acc = parse_dt(row.iloc[mapping["acceptance_date"]])
+                dt_ttp = parse_dt(row.iloc[mapping["ttp_first_date"]]) if mapping["ttp_first_date"] is not None else None
                 res_first = clean_text_lower(row.iloc[mapping["result_first"]])
                 res_final = clean_text_lower(row.iloc[mapping["result_final"]])
                 is_success = "đã phát thành công" in res_final
                 aging = (now - dt_acc).days if dt_acc else 0
                 is_sla = aging > 3 and "chưa có tt phát" in res_first
-                processed.append((tid, clean_text_nfc(row.iloc[mapping["province"]]), clean_text_nfc(row.iloc[mapping["post_office"]]), str(dt_acc) if dt_acc else "", res_first, res_final, 'Thành công' if is_success else 'Chưa thành công', int(aging), is_sla, sid))
-
+                processed.append((tid, clean_text_nfc(row.iloc[mapping["province"]]), clean_text_nfc(row.iloc[mapping["post_office"]]), str(dt_acc) if dt_acc else "", str(dt_ttp) if dt_ttp else "", res_first, res_final, 'Thành công' if is_success else 'Chưa thành công', int(aging), is_sla, sid))
             cursor.executemany('INSERT INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?)', processed)
             cursor.execute("COMMIT")
             return {"message": "Success", "sid": sid}
@@ -120,65 +129,29 @@ async def get_acceptance_trend():
     session = cursor.execute("SELECT session_id FROM import_sessions ORDER BY session_id DESC LIMIT 1").fetchone()
     if not session: return {"data": [], "kpis": {}}
     sid = session['session_id']
-    
-    # 1. GROUP BY DATE WITH DIRECTIONAL BREAKDOWN
+    north_where = " OR ".join([f"province LIKE '%{p}%'" for p in NORTH_PROVINCES])
     query = f'''
         SELECT 
             SUBSTR(acceptance_date, 1, 10) as date,
             COUNT(*) as total,
             SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as success,
             SUM(CASE WHEN (province LIKE "%Huế%" OR province LIKE "%Hue%") THEN 1 ELSE 0 END) as intra,
-            SUM(CASE WHEN NOT (province LIKE "%Huế%" OR province LIKE "%Hue%") AND ({ " OR ".join([f"province LIKE '%{p}%'" for p in NORTH_PROVINCES]) }) THEN 1 ELSE 0 END) as north
+            SUM(CASE WHEN NOT (province LIKE "%Huế%" OR province LIKE "%Hue%") AND ({north_where}) THEN 1 ELSE 0 END) as north
         FROM orders 
         WHERE session_id = ? AND acceptance_date != ""
         GROUP BY date ORDER BY date ASC
     '''
     rows = cursor.execute(query, (sid,)).fetchall()
     conn.close()
-
     trend_data = []
     peak_val = 0
     peak_date = "N/A"
-    
     for r in rows:
-        d = r['date']
-        tot = r['total']
-        suc = r['success']
-        intra = r['intra'] or 0
-        north = r['north'] or 0
-        south = tot - intra - north
-        
-        if tot > peak_val:
-            peak_val = tot
-            peak_date = d
-            
-        trend_data.append({
-            "date": d[-5:], # MM-DD for clean X-axis
-            "full_date": d,
-            "total": tot,
-            "success": suc,
-            "intra": intra,
-            "north": north,
-            "south": south,
-            "backlog": tot - suc
-        })
-
-    # CALCULATE GROWTH %
-    growth = 0
-    if len(trend_data) >= 2:
-        last = trend_data[-1]['total']
-        prev = trend_data[-2]['total']
-        growth = round((last - prev)*100/prev) if prev > 0 else 0
-
-    return {
-        "data": trend_data,
-        "kpis": {
-            "peak_day": peak_date,
-            "peak_value": peak_val,
-            "growth_rate": growth,
-            "avg_volume": round(sum(d['total'] for d in trend_data)/len(trend_data)) if trend_data else 0
-        }
-    }
+        d = r['date']; tot = r['total']; suc = r['success']
+        intra = r['intra'] or 0; north = r['north'] or 0; south = tot - intra - north
+        if tot > peak_val: peak_val = tot; peak_date = d
+        trend_data.append({"date": d[-5:], "full_date": d, "total": tot, "success": suc, "intra": intra, "north": north, "south": south})
+    return {"data": trend_data, "kpis": {"peak_day": peak_date, "peak_value": peak_val, "growth_rate": 0, "avg_volume": round(sum(d['total'] for d in trend_data)/len(trend_data)) if trend_data else 0}}
 
 @app.get("/api/dashboard/stats")
 async def get_stats():
@@ -189,7 +162,8 @@ async def get_stats():
     sid = session['session_id']
     kpis = cursor.execute('SELECT COUNT(*) as t, SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as s, SUM(CASE WHEN is_sla_violation=1 THEN 1 ELSE 0 END) as sla FROM orders WHERE session_id=?', (sid,)).fetchone()
     intra = cursor.execute("SELECT COUNT(*) as t, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as s FROM orders WHERE session_id=? AND (province LIKE '%Huế%' OR province LIKE '%Hue%')", (sid,)).fetchone()
-    north = cursor.execute(f"SELECT COUNT(*) as t, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as s FROM orders WHERE session_id=? AND NOT (province LIKE '%Huế%' OR province LIKE '%Hue%') AND ({' OR '.join([f'province LIKE \'%{p}%\'' for p in NORTH_PROVINCES])})", (sid,)).fetchone()
+    north_where = " OR ".join([f"province LIKE '%{p}%'" for p in NORTH_PROVINCES])
+    north = cursor.execute(f"SELECT COUNT(*) as t, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as s FROM orders WHERE session_id=? AND NOT (province LIKE '%Huế%' OR province LIKE '%Hue%') AND ({north_where})", (sid,)).fetchone()
     conn.close()
     t, s = kpis['t'], kpis['s']
     it, isuc = intra['t'] or 0, intra['s'] or 0
