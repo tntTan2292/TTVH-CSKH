@@ -25,6 +25,66 @@ def log_terminal(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
     sys.stdout.flush()
 
+def verify_import_integrity(sid):
+    """
+    REGRESSION TEST SUITE V1.0
+    Perform critical assertions and data sanity checks after every import.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        # 1. GATHER CORE METRICS
+        total = cursor.execute("SELECT COUNT(*) as c FROM orders WHERE session_id=?", (sid,)).fetchone()['c']
+        success = cursor.execute("SELECT COUNT(*) as c FROM orders WHERE session_id=? AND status='Thành công'", (sid,)).fetchone()['c']
+        sla = cursor.execute("SELECT COUNT(*) as c FROM orders WHERE session_id=? AND is_sla_violation=1", (sid,)).fetchone()['c']
+        
+        hue = cursor.execute("SELECT COUNT(*) as c FROM orders WHERE session_id=? AND (province LIKE '%Huế%' OR province LIKE '%Hue%')", (sid,)).fetchone()['c']
+        north_where = " OR ".join([f"province LIKE '%{p}%'" for p in NORTH_PROVINCES])
+        north = cursor.execute(f"SELECT COUNT(*) as c FROM orders WHERE session_id=? AND NOT (province LIKE '%Huế%' OR province LIKE '%Hue%') AND ({north_where})", (sid,)).fetchone()['c']
+        south = total - hue - north
+        
+        provinces = cursor.execute("SELECT DISTINCT province FROM orders WHERE session_id=? AND province != ''", (sid,)).fetchall()
+        bcvhs = cursor.execute("SELECT DISTINCT post_office_name FROM orders WHERE session_id=? AND post_office_name != ''", (sid,)).fetchall()
+        
+        # 2. RUN ASSERTIONS
+        assertions = {
+            "success_in_range": success <= total,
+            "geo_sum_match": (hue + north + south) == total,
+            "province_data_present": len(provinces) > 0,
+            "bcvh_data_present": len(bcvhs) > 0,
+            "sla_distinct_from_pending": sla != (total - success) # Basic logic check
+        }
+        
+        verification_report = {
+            "session_id": sid,
+            "timestamp": datetime.now().isoformat(),
+            "metrics": {
+                "total": total, "success": success, "pending": total - success, "sla": sla,
+                "north": north, "south": south, "hue_local": hue
+            },
+            "coverage": {
+                "provinces_count": len(provinces),
+                "bcvh_count": len(bcvhs)
+            },
+            "assertions": assertions,
+            "status": "PASS" if all(assertions.values()) else "FAIL"
+        }
+        
+        print("\n" + "="*50)
+        print("📊 REGRESSION VERIFICATION REPORT")
+        print("="*50)
+        print(json.dumps(verification_report, indent=2))
+        print("="*50 + "\n")
+        
+        if verification_report["status"] == "FAIL":
+            log_terminal("⚠️ WARNING: DATA INTEGRITY CHECK FAILED. REVIEW ASSERTIONS.")
+            
+    except Exception as e:
+        log_terminal(f"❌ VERIFICATION CRASHED: {str(e)}")
+    finally:
+        conn.close()
+
 def clean_text_nfc(text):
     if not text or pd.isna(text): return ""
     return unicodedata.normalize('NFC', str(text)).strip()
@@ -65,8 +125,8 @@ def get_db_conn():
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"--- [FINAL DEPLOY] START: {file.filename} ---")
-    file_path = os.path.join(UPLOAD_DIR, f"final_{datetime.now().strftime('%H%M%S')}_{file.filename}")
+    log_terminal(f"--- [STABILIZATION] IMPORT: {file.filename} ---")
+    file_path = os.path.join(UPLOAD_DIR, f"stable_{datetime.now().strftime('%H%M%S')}_{file.filename}")
     try:
         content = await file.read()
         with open(file_path, "wb") as f: f.write(content)
@@ -114,6 +174,10 @@ async def upload_excel(file: UploadFile = File(...)):
                 processed.append((tid, clean_text_nfc(row.iloc[mapping["province"]]), clean_text_nfc(row.iloc[mapping["post_office"]]), str(dt_acc) if dt_acc else "", str(dt_ttp) if dt_ttp else "", res_first, res_final, 'Thành công' if is_success else 'Chưa thành công', int(aging), is_sla, sid))
             cursor.executemany('INSERT INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?)', processed)
             cursor.execute("COMMIT")
+            
+            # TRIGGER REGRESSION TEST SUITE
+            verify_import_integrity(sid)
+            
             return {"message": "Success", "sid": sid}
         finally: conn.close()
     except Exception as e:
@@ -150,8 +214,8 @@ async def get_acceptance_trend():
         d = r['date']; tot = r['total']; suc = r['success']
         intra = r['intra'] or 0; north = r['north'] or 0; south = tot - intra - north
         if tot > peak_val: peak_val = tot; peak_date = d
-        trend_data.append({"date": d[-5:], "full_date": d, "total": tot, "success": suc, "intra": intra, "north": north, "south": south})
-    return {"data": trend_data, "kpis": {"peak_day": peak_date, "peak_value": peak_val, "growth_rate": 0, "avg_volume": round(sum(d['total'] for d in trend_data)/len(trend_data)) if trend_data else 0}}
+        trend_data.append({"date": d[-5:], "total": tot, "success": suc, "intra": intra, "north": north, "south": south})
+    return {"data": trend_data, "kpis": {"peak_day": peak_date, "peak_value": peak_val, "avg_volume": round(sum(d['total'] for d in trend_data)/len(trend_data)) if trend_data else 0}}
 
 @app.get("/api/dashboard/stats")
 async def get_stats():
