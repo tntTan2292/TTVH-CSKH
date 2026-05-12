@@ -82,14 +82,12 @@ async def upload_excel(file: UploadFile = File(...)):
         with pd.ExcelFile(file_path, engine='openpyxl') as xls:
             target_sheet = 'DanhSach' if 'DanhSach' in xls.sheet_names else xls.sheet_names[0]
             df_raw_10 = pd.read_excel(xls, sheet_name=target_sheet, header=None, nrows=10)
-            
             header_idx = 0
             for i, row in df_raw_10.iterrows():
                 row_str = " ".join([clean_text_lower(val) for val in row if not pd.isna(val)])
                 if any(k in row_str for k in ["số hiệu", "mã bưu gửi", "kết quả"]):
                     header_idx = i
                     break
-            
             df = pd.read_excel(xls, sheet_name=target_sheet, header=header_idx)
             df.columns = [clean_text_nfc(h) for h in df.columns]
 
@@ -119,7 +117,6 @@ async def upload_excel(file: UploadFile = File(...)):
             tid = str(row.iloc[mapping["tracking_id"]]).strip()
             if not tid: continue
             
-            # PARSING
             dt_accept = parse_dt(row.iloc[mapping["acceptance_date"]])
             dt_ttp = parse_dt(row.iloc[mapping["ttp_first_date"]]) if mapping["ttp_first_date"] is not None else None
             res_first = clean_text_lower(row.iloc[mapping["result_first"]])
@@ -129,39 +126,24 @@ async def upload_excel(file: UploadFile = File(...)):
             if dt_ttp: d_parsed_ttp += 1
             if res_first: d_first_result_found += 1
             
-            # SLA LOGIC
             is_sla = False
-            # CASE 1
             if dt_accept and dt_ttp and (dt_ttp - dt_accept).days > 3:
                 is_sla = True
                 d_case1 += 1
-            # CASE 2
             if not is_sla and dt_accept and "chưa có tt phát" in res_first and (now - dt_accept).days > 3:
                 is_sla = True
                 d_case2 += 1
             
             is_success = "đã phát thành công" in res_final
             if is_success: d_success += 1
-            
             aging = (now - dt_accept).days if dt_accept else 0
             
             if len(samples) < 5:
-                samples.append({
-                    "tracking_id": tid,
-                    "accept_date": str(dt_accept) if dt_accept else "NULL",
-                    "first_ttp": str(dt_ttp) if dt_ttp else "NULL",
-                    "first_result": res_first or "NULL",
-                    "aging_days": int(aging),
-                    "is_sla": is_sla
-                })
+                samples.append({"tracking_id": tid, "accept_date": str(dt_accept) if dt_accept else "NULL", "first_ttp": str(dt_ttp) if dt_ttp else "NULL", "first_result": res_first or "NULL", "aging_days": int(aging), "is_sla": is_sla})
             
-            processed_orders.append((
-                tid, str(dt_accept) if dt_accept else "", str(dt_ttp) if dt_ttp else "",
-                res_first, res_final, 'Thành công' if is_success else 'Chưa thành công', 
-                int(aging), is_sla, 0 # session_id will be added
-            ))
+            processed_orders.append((tid, str(dt_accept) if dt_accept else "", str(dt_ttp) if dt_ttp else "", res_first, res_final, 'Thành công' if is_success else 'Chưa thành công', int(aging), is_sla, 0))
 
-        # LOG BLOCK
+        # LOG BLOCK (STAYS FOR VERIFICATION)
         print("\n================ SLA DEBUG ================")
         print(f"TOTAL_ROWS:          {len(df)}")
         print(f"PARSED_ACCEPT_DATE:  {d_parsed_accept}")
@@ -173,7 +155,6 @@ async def upload_excel(file: UploadFile = File(...)):
         print(f"SUCCESS_COUNT:       {d_success}")
         print(f"PENDING_COUNT:       {len(df) - d_success}")
         print("===========================================\n")
-        
         print("SAMPLE ROWS (JSON):")
         print(json.dumps(samples, indent=2, ensure_ascii=False))
         print("-------------------------------------------\n")
@@ -189,10 +170,8 @@ async def upload_excel(file: UploadFile = File(...)):
             cursor.execute("COMMIT")
             return {"message": "Forensic Logged", "sid": sid}
         finally: conn.close()
-
     except Exception as e:
         log_terminal(f"ERR: {str(e)}")
-        traceback.print_exc()
         return JSONResponse(status_code=500, content={"detail": str(e)})
     finally:
         if os.path.exists(file_path): os.remove(file_path)
@@ -206,7 +185,24 @@ async def get_stats():
     sid = session['session_id']
     kpis = cursor.execute('SELECT COUNT(*) as total, SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as success, SUM(CASE WHEN is_sla_violation=1 THEN 1 ELSE 0 END) as sla FROM orders WHERE session_id=?', (sid,)).fetchone()
     conn.close()
-    return {"kpis": {"total": kpis['total'], "success": kpis['success'], "pending": kpis['total'] - kpis['success'], "sla": kpis['sla']}}
+    # RESTORE COMPATIBILITY TO PREVENT WHITE SCREEN
+    return {
+        "kpis": {"total": kpis['total'], "success": kpis['success'], "pending": kpis['total'] - kpis['success'], "sla": kpis['sla']},
+        "directions": {
+            "intra": {"total": 0, "success": 0},
+            "north": {"total": 0, "success": 0},
+            "south": {"total": 0, "success": 0}
+        }
+    }
+
+@app.get("/api/dashboard/province-performance")
+async def get_province(): return []
+
+@app.get("/api/dashboard/bcvh-summary")
+async def get_bcvh(): return []
+
+@app.get("/api/dashboard/sla-risk")
+async def get_sla(): return []
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
