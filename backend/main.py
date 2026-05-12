@@ -19,8 +19,7 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "backend", "temp_uploads")
 TEMPLATE_PATH = os.path.join(BASE_DIR, "backend", "report_template.md")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# GEOGRAPHIC MAPPING (GOVERNED V4.3)
-# Adding Quang Binh, Quang Tri to North as they are "Hướng Bắc" from Hue
+# GEOGRAPHIC MAPPING (GOVERNED V4.4)
 NORTH_PROVINCES_RAW = [
     "Hà Nội", "Hải Phòng", "Bắc Ninh", "Thái Nguyên", "Vĩnh Phúc", "Hải Dương", "Quảng Ninh", "Ninh Bình", 
     "Nam Định", "Hà Nam", "Hòa Bình", "Sơn La", "Điện Biên", "Lai Châu", "Lào Cai", "Yên Bái", "Phú Thọ", 
@@ -36,66 +35,25 @@ def normalize_province_forensic(name):
     if not name or pd.isna(name): return ""
     name = str(name).lower()
     name = unicodedata.normalize('NFC', name)
-    # Remove TP., Tỉnh, spaces
     name = name.replace("tp.", "").replace("tỉnh", "").replace("thành phố", "").strip()
-    # Remove extra internal spaces
     name = " ".join(name.split())
     return name
 
 NORTH_PROVINCES_NORM = [normalize_province_forensic(p) for p in NORTH_PROVINCES_RAW]
 
 def run_directional_forensic(sid):
-    """
-    DIRECTIONAL FORENSIC ENGINE V4.3
-    Dumps classification logic to terminal for root-cause analysis.
-    """
     conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
     try:
-        rows = cursor.execute("SELECT tracking_id, province FROM orders WHERE session_id=?", (sid,)).fetchall()
-        
-        n_count, s_count, i_count = 0, 0, 0
-        mismatches = []
-        
+        rows = cursor.execute("SELECT province FROM orders WHERE session_id=?", (sid,)).fetchall()
+        n, s, i = 0, 0, 0
         for r in rows:
-            raw_p = r['province']
-            norm_p = normalize_province_forensic(raw_p)
-            
-            region = "SOUTH"
-            if any(k in norm_p for k in ["huế", "hue"]):
-                region = "INTRA"
-                i_count += 1
-            elif norm_p in NORTH_PROVINCES_NORM or any(np in norm_p for np in NORTH_PROVINCES_NORM):
-                region = "NORTH"
-                n_count += 1
-            else:
-                s_count += 1
-                # Potential Mismatch Detection (If it looks North but was classified South)
-                if any(k in norm_p for k in ["bình", "trị", "hà", "hải", "bắc", "nam", "thái"]):
-                    mismatches.append({
-                        "tracking": r['tracking_id'],
-                        "raw": raw_p,
-                        "norm": norm_p,
-                        "actual": region
-                    })
-
-            # Sample Logging
-            if n_count + s_count + i_count <= 10:
-                print(f"[FORENSIC_DIRECTION] raw='{raw_p}' -> norm='{norm_p}' -> class={region}")
-
-        print("\n" + "!"*60)
-        print("🔥 FORENSIC DIRECTION REPORT (V4.3)")
-        print(f"RESULT -> NORTH: {n_count} | SOUTH: {s_count} | INTRA: {i_count} | TOTAL: {n_count+s_count+i_count}")
-        print("!"*60)
-        
-        if mismatches:
-            print("\n[POTENTIAL_MISMATCH_SAMPLES]")
-            for m in mismatches[:5]:
-                print(f"  TRACKING: {m['tracking']} | PROV: {m['raw']} | NORM: {m['norm']} | CLASS: {m['actual']}")
-        
-    except Exception as e:
-        log_terminal(f"❌ FORENSIC FAILED: {str(e)}")
-    finally:
-        conn.close()
+            p = normalize_province_forensic(r['province'])
+            if any(k in p for k in ["huế", "hue"]): i += 1
+            elif p in NORTH_PROVINCES_NORM or any(np in p for np in NORTH_PROVINCES_NORM): n += 1
+            else: s += 1
+        print(f"\n[FORENSIC DIRECTION] NORTH: {n} | SOUTH: {s} | INTRA: {i} | TOTAL: {n+s+i}\n")
+    except Exception as e: log_terminal(f"❌ FORENSIC FAILED: {str(e)}")
+    finally: conn.close()
 
 def parse_dt(val):
     if pd.isna(val) or val == "": return None
@@ -128,8 +86,8 @@ def get_db_conn():
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"--- [DIRECTIONAL FORENSIC] IMPORT: {file.filename} ---")
-    file_path = os.path.join(UPLOAD_DIR, f"dir_{datetime.now().strftime('%H%M%S')}_{file.filename}")
+    log_terminal(f"--- IMPORT: {file.filename} ---")
+    file_path = os.path.join(UPLOAD_DIR, f"up_{datetime.now().strftime('%H%M%S')}_{file.filename}")
     try:
         content = await file.read()
         with open(file_path, "wb") as f: f.write(content)
@@ -137,7 +95,6 @@ async def upload_excel(file: UploadFile = File(...)):
             target_sheet = 'DanhSach' if 'DanhSach' in xls.sheet_names else xls.sheet_names[0]
             df = pd.read_excel(xls, sheet_name=target_sheet)
             df.columns = [str(h).strip() for h in df.columns]
-
         mapping = {
             "tracking_id": find_best_col(df.columns, ["số hiệu", "mã bưu gửi"]),
             "acceptance_date": find_best_col(df.columns, ["ngày chấp nhận", "ngày gửi"]),
@@ -147,7 +104,6 @@ async def upload_excel(file: UploadFile = File(...)):
             "province": find_best_col(df.columns, ["tỉnh"], ["mã"]),
             "post_office": find_best_col(df.columns, ["bcvh", "tên bcvh", "bưu cục vận hành"])
         }
-
         now = datetime.now(); conn = get_db_conn(); cursor = conn.cursor()
         try:
             cursor.execute("BEGIN TRANSACTION")
@@ -185,7 +141,6 @@ async def get_acceptance_trend():
         sid = session['session_id']
         rows = cursor.execute("SELECT SUBSTR(acceptance_date, 1, 10) as date, COUNT(*) as total, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as success, SUM(CASE WHEN is_sla_violation=1 THEN 1 ELSE 0 END) as sla FROM orders WHERE session_id = ? AND acceptance_date != '' GROUP BY date ORDER BY date ASC", (sid,)).fetchall()
         result_data = [{"date": r['date'], "total": r['total'], "success": r['success'], "success_rate": round(r['success']*100/r['total']) if r['total']>0 else 0, "sla_rate": round(r['sla']*100/r['total']) if r['total']>0 else 0} for r in rows]
-        log_terminal(f"[ACCEPTANCE_TREND_OK] sid={sid} rows={len(result_data)}")
         return {"data": result_data}
     except Exception as e: return {"data": [], "error": str(e)}
     finally: conn.close()
@@ -197,18 +152,14 @@ async def get_stats():
     if not session: return {"error": "No Data"}
     sid = session['session_id']
     kpis = cursor.execute('SELECT COUNT(*) as t, SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as s, SUM(CASE WHEN is_sla_violation=1 THEN 1 ELSE 0 END) as sla FROM orders WHERE session_id=?', (sid,)).fetchone()
-    
-    # RE-CLASSIFY DIRECTIONS FOR STATS
     rows = cursor.execute("SELECT province, status FROM orders WHERE session_id=?", (sid,)).fetchall()
     n_tot, n_suc, s_tot, s_suc, i_tot, i_suc = 0, 0, 0, 0, 0, 0
-    
     for r in rows:
         p = normalize_province_forensic(r['province'])
         is_suc = 1 if r['status'] == 'Thành công' else 0
         if any(k in p for k in ["huế", "hue"]): i_tot += 1; i_suc += is_suc
         elif p in NORTH_PROVINCES_NORM or any(np in p for np in NORTH_PROVINCES_NORM): n_tot += 1; n_suc += is_suc
         else: s_tot += 1; s_suc += is_suc
-    
     conn.close()
     return {"kpis": {"total": kpis['t'], "success": kpis['s'], "pending": kpis['t'] - kpis['s'], "sla": kpis['sla']}, "directions": {"intra": {"total": i_tot, "success": i_suc}, "north": {"total": n_tot, "success": n_suc}, "south": {"total": s_tot, "success": s_suc}}}
 
@@ -244,31 +195,55 @@ async def get_sla_risk():
 
 @app.get("/api/dashboard/generate-report")
 async def generate_report():
+    """
+    STABILIZED REPORT ENGINE V4.4
+    Added defensive null-checks to prevent API 500 crashes.
+    """
     conn = get_db_conn(); cursor = conn.cursor()
-    session = cursor.execute("SELECT session_id FROM import_sessions ORDER BY session_id DESC LIMIT 1").fetchone()
-    if not session: return {"error": "No Data"}
-    sid = session['session_id']
-    kpis = cursor.execute('SELECT COUNT(*) as t, SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as s, SUM(CASE WHEN result_first LIKE "%chưa có tt phát%" THEN 1 ELSE 0 END) as p FROM orders WHERE session_id=?', (sid,)).fetchone()
-    t, s, p = kpis['t'], kpis['s'], kpis['p']
-    failed = t - s - p
-    trends = cursor.execute("SELECT SUBSTR(acceptance_date, 1, 10) as d, COUNT(*) as ct, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as su FROM orders WHERE session_id=? AND acceptance_date != '' GROUP BY d ORDER BY d ASC", (sid,)).fetchall()
-    trend_text = ", ".join([f"{r['d'][-5:]}: {round(r['su']*100/r['ct'])}%" for r in trends])
-    provinces = cursor.execute("SELECT province, COUNT(*) as ct, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as su FROM orders WHERE session_id=? GROUP BY province ORDER BY su*1.0/ct DESC LIMIT 3", (sid,)).fetchall()
-    top_provinces = " và ".join([r['province'] for r in provinces])
-    
-    rows = cursor.execute("SELECT province, status FROM orders WHERE session_id=?", (sid,)).fetchall()
-    n_tot, n_suc, s_tot, s_suc, i_tot, i_suc = 0, 0, 0, 0, 0, 0
-    for r in rows:
-        p = normalize_province_forensic(r['province'])
-        is_suc = 1 if r['status'] == 'Thành công' else 0
-        if any(k in p for k in ["huế", "hue"]): i_tot += 1; i_suc += is_suc
-        elif p in NORTH_PROVINCES_NORM or any(np in p for np in NORTH_PROVINCES_NORM): n_tot += 1; n_suc += is_suc
-        else: s_tot += 1; s_suc += is_suc
+    try:
+        session = cursor.execute("SELECT session_id FROM import_sessions ORDER BY session_id DESC LIMIT 1").fetchone()
+        if not session: return {"error": "No Data"}
+        sid = session['session_id']
         
-    risk_0705 = cursor.execute("SELECT COUNT(*) as ct FROM orders WHERE session_id=? AND acceptance_date LIKE '%05-07%' AND result_first LIKE '%chưa có tt phát%'", (sid,)).fetchone()['ct'] or 0
-    conn.close()
-    ctx = {"date_now": datetime.now().strftime("%Hh%M ngày %d/%m/%Y"), "total": t, "success_count": s, "success_rate": round(s*100/t), "pending_count": p, "pending_rate": round(p*100/t), "failed_count": failed, "failed_rate": round(failed*100/t), "trend_text": trend_text, "top_provinces": top_provinces, "n_rate": round(n_suc*100/n_tot) if n_tot>0 else 0, "s_rate": round(s_suc*100/s_tot) if s_tot>0 else 0, "i_rate": round(i_suc*100/i_tot) if i_tot>0 else 0, "s_ct": s_tot, "risk_0705": risk_0705}
-    with open(TEMPLATE_PATH, "r", encoding="utf-8") as f: return {"report": f.read().format(**ctx)}
+        kpis = cursor.execute('SELECT COUNT(*) as t, SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as s, SUM(CASE WHEN result_first LIKE "%chưa có tt phát%" THEN 1 ELSE 0 END) as p FROM orders WHERE session_id=?', (sid,)).fetchone()
+        t, s, p = kpis['t'], kpis['s'], kpis['p']
+        failed = t - s - p
+        
+        trends = cursor.execute("SELECT SUBSTR(acceptance_date, 1, 10) as d, COUNT(*) as ct, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as su FROM orders WHERE session_id=? AND acceptance_date != '' GROUP BY d ORDER BY d ASC", (sid,)).fetchall()
+        trend_text = ", ".join([f"{r['d'][-5:] if r['d'] else 'N/A'}: {round(r['su']*100/r['ct']) if r['ct']>0 else 0}%" for r in trends])
+        
+        provinces = cursor.execute("SELECT province, COUNT(*) as ct, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as su FROM orders WHERE session_id=? GROUP BY province ORDER BY su*1.0/ct DESC LIMIT 3", (sid,)).fetchall()
+        top_provinces = " và ".join([r['province'] for r in provinces]) if provinces else "N/A"
+        
+        rows = cursor.execute("SELECT province, status FROM orders WHERE session_id=?", (sid,)).fetchall()
+        n_tot, n_suc, s_tot, s_suc, i_tot, i_suc = 0, 0, 0, 0, 0, 0
+        for r in rows:
+            p_norm = normalize_province_forensic(r['province'])
+            is_suc = 1 if r['status'] == 'Thành công' else 0
+            if any(k in p_norm for k in ["huế", "hue"]): i_tot += 1; i_suc += is_suc
+            elif p_norm in NORTH_PROVINCES_NORM or any(np in p_norm for np in NORTH_PROVINCES_NORM): n_tot += 1; n_suc += is_suc
+            else: s_tot += 1; s_suc += is_suc
+            
+        risk_0705 = cursor.execute("SELECT COUNT(*) as ct FROM orders WHERE session_id=? AND acceptance_date LIKE '%05-07%' AND result_first LIKE '%chưa có tt phát%'", (sid,)).fetchone()['ct'] or 0
+        
+        ctx = {
+            "date_now": datetime.now().strftime("%Hh%M ngày %d/%m/%Y"),
+            "total": t, "success_count": s, "success_rate": round(s*100/t) if t>0 else 0,
+            "pending_count": p, "pending_rate": round(p*100/t) if t>0 else 0,
+            "failed_count": failed, "failed_rate": round(failed*100/t) if t>0 else 0,
+            "trend_text": trend_text or "Chưa có dữ liệu xu hướng",
+            "top_provinces": top_provinces,
+            "n_rate": round(n_suc*100/n_tot) if n_tot>0 else 0,
+            "s_rate": round(s_suc*100/s_tot) if s_tot>0 else 0,
+            "i_rate": round(i_suc*100/i_tot) if i_tot>0 else 0,
+            "s_ct": s_tot, "risk_0705": risk_0705
+        }
+        
+        with open(TEMPLATE_PATH, "r", encoding="utf-8") as f: return {"report": f.read().format(**ctx)}
+    except Exception as e:
+        log_terminal(f"❌ REPORT ENGINE CRASH: {str(e)}")
+        return JSONResponse(status_code=500, content={"detail": f"Report Engine Error: {str(e)}"})
+    finally: conn.close()
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
