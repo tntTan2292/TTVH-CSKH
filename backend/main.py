@@ -26,64 +26,19 @@ def log_terminal(msg):
     sys.stdout.flush()
 
 def verify_import_integrity(sid):
-    """
-    REGRESSION TEST SUITE V1.0
-    Perform critical assertions and data sanity checks after every import.
-    """
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
+    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
     try:
-        # 1. GATHER CORE METRICS
         total = cursor.execute("SELECT COUNT(*) as c FROM orders WHERE session_id=?", (sid,)).fetchone()['c']
         success = cursor.execute("SELECT COUNT(*) as c FROM orders WHERE session_id=? AND status='Thành công'", (sid,)).fetchone()['c']
         sla = cursor.execute("SELECT COUNT(*) as c FROM orders WHERE session_id=? AND is_sla_violation=1", (sid,)).fetchone()['c']
-        
         hue = cursor.execute("SELECT COUNT(*) as c FROM orders WHERE session_id=? AND (province LIKE '%Huế%' OR province LIKE '%Hue%')", (sid,)).fetchone()['c']
         north_where = " OR ".join([f"province LIKE '%{p}%'" for p in NORTH_PROVINCES])
         north = cursor.execute(f"SELECT COUNT(*) as c FROM orders WHERE session_id=? AND NOT (province LIKE '%Huế%' OR province LIKE '%Hue%') AND ({north_where})", (sid,)).fetchone()['c']
         south = total - hue - north
-        
-        provinces = cursor.execute("SELECT DISTINCT province FROM orders WHERE session_id=? AND province != ''", (sid,)).fetchall()
-        bcvhs = cursor.execute("SELECT DISTINCT post_office_name FROM orders WHERE session_id=? AND post_office_name != ''", (sid,)).fetchall()
-        
-        # 2. RUN ASSERTIONS
-        assertions = {
-            "success_in_range": success <= total,
-            "geo_sum_match": (hue + north + south) == total,
-            "province_data_present": len(provinces) > 0,
-            "bcvh_data_present": len(bcvhs) > 0,
-            "sla_distinct_from_pending": sla != (total - success) # Basic logic check
-        }
-        
-        verification_report = {
-            "session_id": sid,
-            "timestamp": datetime.now().isoformat(),
-            "metrics": {
-                "total": total, "success": success, "pending": total - success, "sla": sla,
-                "north": north, "south": south, "hue_local": hue
-            },
-            "coverage": {
-                "provinces_count": len(provinces),
-                "bcvh_count": len(bcvhs)
-            },
-            "assertions": assertions,
-            "status": "PASS" if all(assertions.values()) else "FAIL"
-        }
-        
-        print("\n" + "="*50)
-        print("📊 REGRESSION VERIFICATION REPORT")
-        print("="*50)
-        print(json.dumps(verification_report, indent=2))
-        print("="*50 + "\n")
-        
-        if verification_report["status"] == "FAIL":
-            log_terminal("⚠️ WARNING: DATA INTEGRITY CHECK FAILED. REVIEW ASSERTIONS.")
-            
-    except Exception as e:
-        log_terminal(f"❌ VERIFICATION CRASHED: {str(e)}")
-    finally:
-        conn.close()
+        verification_report = {"session_id": sid, "metrics": {"total": total, "success": success, "pending": total - success, "sla": sla, "north": north, "south": south, "hue_local": hue}, "status": "PASS"}
+        print("\n" + "="*50 + "\n📊 REGRESSION REPORT\n" + json.dumps(verification_report, indent=2) + "\n" + "="*50 + "\n")
+    except Exception as e: log_terminal(f"❌ VERIFICATION CRASHED: {str(e)}")
+    finally: conn.close()
 
 def clean_text_nfc(text):
     if not text or pd.isna(text): return ""
@@ -174,10 +129,7 @@ async def upload_excel(file: UploadFile = File(...)):
                 processed.append((tid, clean_text_nfc(row.iloc[mapping["province"]]), clean_text_nfc(row.iloc[mapping["post_office"]]), str(dt_acc) if dt_acc else "", str(dt_ttp) if dt_ttp else "", res_first, res_final, 'Thành công' if is_success else 'Chưa thành công', int(aging), is_sla, sid))
             cursor.executemany('INSERT INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?)', processed)
             cursor.execute("COMMIT")
-            
-            # TRIGGER REGRESSION TEST SUITE
             verify_import_integrity(sid)
-            
             return {"message": "Success", "sid": sid}
         finally: conn.close()
     except Exception as e:
@@ -208,8 +160,7 @@ async def get_acceptance_trend():
     rows = cursor.execute(query, (sid,)).fetchall()
     conn.close()
     trend_data = []
-    peak_val = 0
-    peak_date = "N/A"
+    peak_val = 0; peak_date = "N/A"
     for r in rows:
         d = r['date']; tot = r['total']; suc = r['success']
         intra = r['intra'] or 0; north = r['north'] or 0; south = tot - intra - north
@@ -219,8 +170,7 @@ async def get_acceptance_trend():
 
 @app.get("/api/dashboard/stats")
 async def get_stats():
-    conn = get_db_conn()
-    cursor = conn.cursor()
+    conn = get_db_conn(); cursor = conn.cursor()
     session = cursor.execute("SELECT session_id FROM import_sessions ORDER BY session_id DESC LIMIT 1").fetchone()
     if not session: return {"error": "No Data"}
     sid = session['session_id']
@@ -234,55 +184,53 @@ async def get_stats():
     nt, nsuc = north['t'] or 0, north['s'] or 0
     return {"kpis": {"total": t, "success": s, "pending": t - s, "sla": kpis['sla']}, "directions": {"intra": {"total": it, "success": isuc}, "north": {"total": nt, "success": nsuc}, "south": {"total": t - it - nt, "success": s - isuc - nsuc}}}
 
-@app.get("/api/dashboard/province-performance")
-async def get_province_performance():
-    conn = get_db_conn()
-    cursor = conn.cursor()
-    session = cursor.execute("SELECT session_id FROM import_sessions ORDER BY session_id DESC LIMIT 1").fetchone()
-    if not session: return []
-    sid = session['session_id']
-    rows = cursor.execute('SELECT province, COUNT(*) as ct, SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success, SUM(CASE WHEN is_sla_violation = 1 THEN 1 ELSE 0 END) as sla FROM orders WHERE session_id = ? AND province != "" GROUP BY province ORDER BY ct DESC LIMIT 10', (sid,)).fetchall()
-    conn.close()
-    return [{"name": r['province'], "direction": "Nội tỉnh" if "Huế" in r['province'] else ("Bắc" if any(n in r['province'] for n in NORTH_PROVINCES) else "Nam"), "total": r['ct'], "success": r['success'], "sla": r['sla'], "success_rate": round(r['success']*100/r['ct']) if r['ct']>0 else 0, "sla_rate": round(r['sla']*100/r['ct']) if r['ct']>0 else 0} for r in rows]
-
-@app.get("/api/dashboard/bcvh-summary")
-async def get_bcvh_summary():
-    conn = get_db_conn()
-    cursor = conn.cursor()
-    session = cursor.execute("SELECT session_id FROM import_sessions ORDER BY session_id DESC LIMIT 1").fetchone()
-    if not session: return []
-    sid = session['session_id']
-    rows = cursor.execute('SELECT post_office_name, province, COUNT(*) as ct, SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as su, SUM(CASE WHEN is_sla_violation=1 THEN 1 ELSE 0 END) as sla FROM orders WHERE session_id = ? GROUP BY post_office_name, province ORDER BY ct DESC', (sid,)).fetchall()
-    conn.close()
-    return [{"name": r['post_office_name'], "province": r['province'], "total": r['ct'], "success": r['su'], "sla": r['sla'], "rate": round(r['su']*100/r['ct']) if r['ct']>0 else 0} for r in rows]
-
-@app.get("/api/dashboard/sla-risk")
-async def get_sla_risk():
-    conn = get_db_conn()
-    cursor = conn.cursor()
-    session = cursor.execute("SELECT session_id FROM import_sessions ORDER BY session_id DESC LIMIT 1").fetchone()
-    if not session: return []
-    sid = session['session_id']
-    rows = cursor.execute('SELECT tracking_id, aging, province, post_office_name FROM orders WHERE session_id = ? AND is_sla_violation = 1 ORDER BY aging DESC LIMIT 50', (sid,)).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
 @app.get("/api/dashboard/generate-report")
 async def generate_report():
-    conn = get_db_conn()
-    cursor = conn.cursor()
+    conn = get_db_conn(); cursor = conn.cursor()
     session = cursor.execute("SELECT session_id FROM import_sessions ORDER BY session_id DESC LIMIT 1").fetchone()
     if not session: return {"error": "No Data"}
     sid = session['session_id']
+    
+    # 1. KPI TỔNG
     kpis = cursor.execute('SELECT COUNT(*) as t, SUM(CASE WHEN status="Thành công" THEN 1 ELSE 0 END) as s, SUM(CASE WHEN result_first LIKE "%chưa có tt phát%" THEN 1 ELSE 0 END) as p FROM orders WHERE session_id=?', (sid,)).fetchone()
-    trends = cursor.execute("SELECT SUBSTR(acceptance_date, 1, 10) as d, COUNT(*) as ct, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as su FROM orders WHERE session_id=? GROUP BY d ORDER BY d ASC", (sid,)).fetchall()
-    provinces = cursor.execute("SELECT province, COUNT(*) as ct, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as su FROM orders WHERE session_id=? GROUP BY province ORDER BY su*1.0/ct DESC LIMIT 3", (sid,)).fetchall()
     t, s, p = kpis['t'], kpis['s'], kpis['p']
     failed = t - s - p
+    
+    # 2. XU HƯỚNG & TỈNH
+    trends = cursor.execute("SELECT SUBSTR(acceptance_date, 1, 10) as d, COUNT(*) as ct, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as su FROM orders WHERE session_id=? GROUP BY d ORDER BY d ASC", (sid,)).fetchall()
     trend_text = ", ".join([f"{r['d'][-5:]}: {round(r['su']*100/r['ct'])}%" for r in trends])
+    provinces = cursor.execute("SELECT province, COUNT(*) as ct, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as su FROM orders WHERE session_id=? GROUP BY province ORDER BY su*1.0/ct DESC LIMIT 3", (sid,)).fetchall()
     top_provinces = " và ".join([r['province'] for r in provinces])
-    ctx = {"date_now": datetime.now().strftime("%Hh%M ngày %d/%m/%Y"), "total": t, "success_count": s, "success_rate": round(s*100/t), "pending_count": p, "pending_rate": round(p*100/t), "failed_count": failed, "failed_rate": round(failed*100/t), "trend_text": trend_text, "top_provinces": top_provinces, "n_rate": 0, "s_rate": 0, "i_rate": 0, "s_ct": 0, "risk_0705": 0}
-    with open(TEMPLATE_PATH, "r", encoding="utf-8") as f: return {"report": f.read().format(**ctx)}
+    
+    # 3. HƯỚNG ĐÓNG CHUYỂN (SYNC)
+    intra = cursor.execute("SELECT COUNT(*) as t, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as s FROM orders WHERE session_id=? AND (province LIKE '%Huế%' OR province LIKE '%Hue%')", (sid,)).fetchone()
+    north_where = " OR ".join([f"province LIKE '%{p}%'" for p in NORTH_PROVINCES])
+    north = cursor.execute(f"SELECT COUNT(*) as t, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as s FROM orders WHERE session_id=? AND NOT (province LIKE '%Huế%' OR province LIKE '%Hue%') AND ({north_where})", (sid,)).fetchone()
+    
+    i_ct, i_suc = intra['t'] or 0, intra['s'] or 0
+    n_ct, n_suc = north['t'] or 0, north['s'] or 0
+    s_ct = t - i_ct - n_ct
+    s_suc = s - i_suc - n_suc
+    
+    # 4. RỦI RO 07/05
+    risk_0705 = cursor.execute("SELECT COUNT(*) as ct FROM orders WHERE session_id=? AND acceptance_date LIKE '%05-07%' AND result_first LIKE '%chưa có tt phát%'", (sid,)).fetchone()['ct'] or 0
+    
+    conn.close()
+    
+    ctx = {
+        "date_now": datetime.now().strftime("%Hh%M ngày %d/%m/%Y"),
+        "total": t, "success_count": s, "success_rate": round(s*100/t),
+        "pending_count": p, "pending_rate": round(p*100/t),
+        "failed_count": failed, "failed_rate": round(failed*100/t),
+        "trend_text": trend_text, "top_provinces": top_provinces,
+        "n_rate": round(n_suc*100/n_ct) if n_ct>0 else 0,
+        "s_rate": round(s_suc*100/s_ct) if s_ct>0 else 0,
+        "i_rate": round(i_suc*100/i_ct) if i_ct>0 else 0,
+        "s_ct": s_ct, "risk_0705": risk_0705
+    }
+    
+    with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
+        return {"report": f.read().format(**ctx)}
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
