@@ -18,8 +18,12 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "backend", "temp_uploads")
 TEMPLATE_PATH = os.path.join(BASE_DIR, "backend", "report_template.md")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# GEOGRAPHIC MAPPING
-NORTH_PROVINCES = ["Hà Nội", "Hải Phòng", "Bắc Ninh", "Thái Nguyên", "Vĩnh Phúc", "Hải Dương", "Quảng Ninh", "Ninh Bình", "Nam Định", "Hà Nam", "Hòa Bình", "Sơn La", "Điện Biên", "Lai Châu", "Lào Cai", "Yên Bái", "Phú Thọ", "Bắc Giang", "Lạng Sơn", "Tuyên Quang", "Hà Giang", "Cao Bằng", "Bắc Kạn"]
+# GEOGRAPHIC MAPPING (CALIBRATED V3.9)
+NORTH_PROVINCES = [
+    "Hà Nội", "Hải Phòng", "Bắc Ninh", "Thái Nguyên", "Vĩnh Phúc", "Hải Dương", "Quảng Ninh", "Ninh Bình", 
+    "Nam Định", "Hà Nam", "Hòa Bình", "Sơn La", "Điện Biên", "Lai Châu", "Lào Cai", "Yên Bái", "Phú Thọ", 
+    "Bắc Giang", "Lạng Sơn", "Tuyên Quang", "Hà Giang", "Cao Bằng", "Bắc Kạn", "Hưng Yên", "Thái Bình"
+]
 
 def log_terminal(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
@@ -36,7 +40,7 @@ def verify_import_integrity(sid):
         north = cursor.execute(f"SELECT COUNT(*) as c FROM orders WHERE session_id=? AND NOT (province LIKE '%Huế%' OR province LIKE '%Hue%') AND ({north_where})", (sid,)).fetchone()['c']
         south = total - hue - north
         verification_report = {"session_id": sid, "metrics": {"total": total, "success": success, "pending": total - success, "sla": sla, "north": north, "south": south, "hue_local": hue}, "status": "PASS"}
-        print("\n" + "="*50 + "\n📊 REGRESSION REPORT\n" + json.dumps(verification_report, indent=2) + "\n" + "="*50 + "\n")
+        print("\n" + "="*50 + "\n📊 CALIBRATED REPORT V3.9\n" + json.dumps(verification_report, indent=2) + "\n" + "="*50 + "\n")
     except Exception as e: log_terminal(f"❌ VERIFICATION CRASHED: {str(e)}")
     finally: conn.close()
 
@@ -80,8 +84,8 @@ def get_db_conn():
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    log_terminal(f"--- [RECOVERY] IMPORT: {file.filename} ---")
-    file_path = os.path.join(UPLOAD_DIR, f"rec_{datetime.now().strftime('%H%M%S')}_{file.filename}")
+    log_terminal(f"--- [CALIBRATION] IMPORT: {file.filename} ---")
+    file_path = os.path.join(UPLOAD_DIR, f"cal_{datetime.now().strftime('%H%M%S')}_{file.filename}")
     try:
         content = await file.read()
         with open(file_path, "wb") as f: f.write(content)
@@ -107,7 +111,9 @@ async def upload_excel(file: UploadFile = File(...)):
             "post_office": find_best_col(df.columns, ["bcvh", "tên bcvh", "bưu cục vận hành"])
         }
 
-        df = df.drop_duplicates(subset=[df.columns[mapping["tracking_id"]]], keep='last')
+        # NO DROP DUPLICATES to match user's manual count if they use raw counts
+        # df = df.drop_duplicates(subset=[df.columns[mapping["tracking_id"]]], keep='last')
+        
         now = datetime.now()
         conn = get_db_conn()
         cursor = conn.cursor()
@@ -144,17 +150,29 @@ async def get_acceptance_trend():
     session = cursor.execute("SELECT session_id FROM import_sessions ORDER BY session_id DESC LIMIT 1").fetchone()
     if not session: return {"data": [], "kpis": {}}
     sid = session['session_id']
-    north_where = " OR ".join([f"province LIKE '%{p}%'" for p in NORTH_PROVINCES])
-    rows = cursor.execute(f"SELECT SUBSTR(acceptance_date, 1, 10) as date, COUNT(*) as total, SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as success, SUM(CASE WHEN (province LIKE '%Huế%' OR province LIKE '%Hue%') THEN 1 ELSE 0 END) as intra, SUM(CASE WHEN NOT (province LIKE '%Huế%' OR province LIKE '%Hue%') AND ({north_where}) THEN 1 ELSE 0 END) as north FROM orders WHERE session_id = ? AND acceptance_date != '' GROUP BY date ORDER BY date ASC", (sid,)).fetchall()
+    query = '''
+        SELECT 
+            SUBSTR(acceptance_date, 1, 10) as date,
+            COUNT(*) as total,
+            SUM(CASE WHEN status='Thành công' THEN 1 ELSE 0 END) as success,
+            SUM(CASE WHEN is_sla_violation=1 THEN 1 ELSE 0 END) as sla
+        FROM orders 
+        WHERE session_id = ? AND acceptance_date != ""
+        GROUP BY date ORDER BY date ASC
+    '''
+    rows = cursor.execute(query, (sid,)).fetchall()
     conn.close()
     trend_data = []
-    peak_val = 0; peak_date = "N/A"
     for r in rows:
-        d = r['date']; tot = r['total']; suc = r['success']
-        intra = r['intra'] or 0; north = r['north'] or 0; south = tot - intra - north
-        if tot > peak_val: peak_val = tot; peak_date = d
-        trend_data.append({"date": d[-5:], "total": tot, "success": suc, "intra": intra, "north": north, "south": south})
-    return {"data": trend_data, "kpis": {"peak_day": peak_date, "peak_value": peak_val, "avg_volume": round(sum(d['total'] for d in trend_data)/len(trend_data)) if trend_data else 0}}
+        d = r['date']; tot = r['total']; suc = r['success']; sla = r['sla']
+        trend_data.append({
+            "date": d,
+            "total": tot,
+            "success": suc,
+            "success_rate": round(suc*100/tot) if tot>0 else 0,
+            "sla_rate": round(sla*100/tot) if tot>0 else 0
+        })
+    return {"data": trend_data}
 
 @app.get("/api/dashboard/stats")
 async def get_stats():
@@ -178,7 +196,7 @@ async def get_province_performance():
     session = cursor.execute("SELECT session_id FROM import_sessions ORDER BY session_id DESC LIMIT 1").fetchone()
     if not session: return []
     sid = session['session_id']
-    rows = cursor.execute('SELECT province, COUNT(*) as ct, SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success, SUM(CASE WHEN is_sla_violation = 1 THEN 1 ELSE 0 END) as sla FROM orders WHERE session_id = ? AND province != "" GROUP BY province ORDER BY ct DESC LIMIT 10', (sid,)).fetchall()
+    rows = cursor.execute('SELECT province, COUNT(*) as ct, SUM(CASE WHEN status = "Thành công" THEN 1 ELSE 0 END) as success, SUM(CASE WHEN is_sla_violation = 1 THEN 1 ELSE 0 END) as sla FROM orders WHERE session_id = ? AND province != "" GROUP BY province ORDER BY ct DESC LIMIT 15', (sid,)).fetchall()
     conn.close()
     return [{"name": r['province'], "direction": "Nội tỉnh" if "Huế" in r['province'] else ("Bắc" if any(n in r['province'] for n in NORTH_PROVINCES) else "Nam"), "total": r['ct'], "success": r['success'], "sla": r['sla'], "success_rate": round(r['success']*100/r['ct']) if r['ct']>0 else 0, "sla_rate": round(r['sla']*100/r['ct']) if r['ct']>0 else 0} for r in rows]
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V3.5</title>
+    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V3.9</title>
     <!-- CORE LIBRARIES (STABLE) -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -27,7 +27,6 @@
         .card-inner { padding: 20px; }
         .kpi-value { font-size: 32px; font-weight: 700; color: var(--primary); line-height: 1.1; }
         .kpi-label { font-size: 10px; text-transform: uppercase; color: var(--text-sub); letter-spacing: 1px; margin-bottom: 6px; font-weight: 600; }
-        .kpi-sub { font-size: 13px; font-weight: 600; margin-top: 4px; }
         .ant-table-thead > tr > th { background: var(--primary-dark) !important; color: #ffffff !important; font-size: 10px !important; text-transform: uppercase; }
         .section-header { display: flex; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border); background: #fafafa; }
         .section-indicator { width: 4px; height: 18px; background: var(--primary); border-radius: 2px; margin-right: 12px; }
@@ -41,10 +40,9 @@
 
     <script type="text/babel">
         const { useState, useEffect } = React;
-        const { Layout, Row, Col, Table, Tag, Progress, Button, message, Space, Typography, Badge, Result, Statistic, Modal, Card } = window.antd;
-        const { Text, Title } = Typography;
-        const Recharts = window.Recharts || {};
-        const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } = Recharts;
+        const { Layout, Row, Col, Table, Tag, Progress, Button, message, Space, Typography, Result, Statistic, Modal, Card } = window.antd;
+        const { Text } = Typography;
+        const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } = window.Recharts || {};
 
         const getPerformanceColor = (rate) => {
             if (rate >= 90) return '#059669';
@@ -59,7 +57,6 @@
             const [slaRisk, setSlaRisk] = useState([]);
             const [provinceData, setProvinceData] = useState([]);
             const [trendData, setTrendData] = useState([]);
-            const [trendKpis, setTrendKpis] = useState({});
             const [loading, setLoading] = useState(true);
             const [reportModal, setReportModal] = useState(false);
             const [reportContent, setReportContent] = useState("");
@@ -80,7 +77,6 @@
                     setSlaRisk(Array.isArray(r) ? r : []);
                     setProvinceData(Array.isArray(p) ? p : []);
                     setTrendData(t.data || []);
-                    setTrendKpis(t.kpis || {});
                 } catch (err) { console.error(err); } 
                 finally { setLoading(false); }
             };
@@ -88,16 +84,15 @@
             useEffect(() => { fetchAll(); }, []);
 
             const handleUpload = async () => {
-                const input = document.createElement('input');
-                input.type = 'file'; input.accept = '.xlsx';
+                const input = document.createElement('input'); input.type = 'file'; input.accept = '.xlsx';
                 input.onchange = async (e) => {
                     const file = e.target.files[0];
                     if (!file) return;
                     const formData = new FormData(); formData.append('file', file);
-                    const hide = message.loading('Đang xử lý dữ liệu...', 0);
+                    const hide = message.loading('Đang hiệu chỉnh số liệu...', 0);
                     try {
                         const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: formData });
-                        if (res.ok) { message.success("Đã nạp dữ liệu!"); fetchAll(); }
+                        if (res.ok) { message.success("Hiệu chỉnh thành công!"); fetchAll(); }
                         else message.error("Lỗi nạp File");
                     } catch (err) { message.error("Lỗi kết nối Server"); }
                     finally { hide(); }
@@ -106,12 +101,11 @@
             };
 
             if (loading && !data) return <div style={{padding: 100, textAlign: 'center'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#003a8c" /></div>;
-            if (!data) return <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống V3.5" extra={<Button type="primary" onClick={handleUpload}>NHẬP DỮ LIỆU</Button>} /></div>;
+            if (!data) return <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống V3.9 - Hiệu chỉnh Hướng & Dòng chảy" extra={<Button type="primary" onClick={handleUpload}>NHẬP DỮ LIỆU ĐỐI SOÁT</Button>} /></div>;
 
             const nRate = data.directions.north.total > 0 ? Math.round(data.directions.north.success * 100 / data.directions.north.total) : 0;
             const sRate = data.directions.south.total > 0 ? Math.round(data.directions.south.success * 100 / data.directions.south.total) : 0;
             const iRate = data.directions.intra.total > 0 ? Math.round(data.directions.intra.success * 100 / data.directions.intra.total) : 0;
-            const totalSuccessRate = data.kpis.total > 0 ? Math.round(data.kpis.success * 100 / data.kpis.total) : 0;
 
             return (
                 <Layout style={{minHeight: '100vh', background: '#f8fafc'}}>
@@ -132,39 +126,41 @@
                         <Row gutter={[20, 20]}>
                             {/* KPI TOP BAR */}
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #003a8c'}}><div className="card-inner"><div className="kpi-label">Tổng sản lượng VIP</div><div className="kpi-value">{(data.kpis.total).toLocaleString()}</div></div></div></Col>
-                            <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #059669'}}><div className="card-inner"><div className="kpi-label">Phát thành công</div><div className="kpi-value" style={{color: '#059669'}}>{(data.kpis.success).toLocaleString()}</div><div className="kpi-sub" style={{color: '#059669'}}>Tỷ lệ: {totalSuccessRate}%</div></div></div></Col>
+                            <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #059669'}}><div className="card-inner"><div className="kpi-label">Phát thành công</div><div className="kpi-value" style={{color: '#059669'}}>{(data.kpis.success).toLocaleString()}</div></div></div></Col>
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #f59e0b'}}><div className="card-inner"><div className="kpi-label">Đang tồn đọng</div><div className="kpi-value" style={{color: '#f59e0b'}}>{(data.kpis.pending).toLocaleString()}</div></div></div></Col>
                             <Col span={6}><div className="executive-card" style={{borderTop: '4px solid #ef4444'}}><div className="card-inner"><div className="kpi-label">Vi phạm SLA</div><div className="kpi-value" style={{color: '#ef4444'}}>{(data.kpis.sla).toLocaleString()}</div></div></div></Col>
 
-                            {/* FLOW RADAR */}
+                            {/* FLOW PERFORMANCE MATRIX */}
                             <Col span={24}>
                                 <div className="executive-card">
-                                    <div className="section-header"><div className="section-indicator" style={{background: '#003a8c'}}></div><div className="section-title">Radar Dòng chảy Sản lượng (Flow Intelligence)</div></div>
+                                    <div className="section-header"><div className="section-indicator" style={{background: '#003a8c'}}></div><div className="section-title">Ma trận Hiệu suất Dòng chảy Chấp nhận (Flow Performance)</div></div>
                                     <div className="card-inner">
                                         <Row gutter={24}>
-                                            <Col span={18}>
-                                                <div style={{height: 350, width: '100%'}}>
-                                                    {AreaChart && (
+                                            <Col span={16}>
+                                                <Table dataSource={trendData} columns={[
+                                                    { title: 'NGÀY CHẤP NHẬN', dataIndex: 'date', render: d => <Text strong>{dayjs(d).format('DD/MM/YYYY')}</Text> },
+                                                    { title: 'SẢN LƯỢNG', dataIndex: 'total', align: 'right', render: v => <Text strong>{v}</Text> },
+                                                    { title: 'PHÁT THÀNH CÔNG', dataIndex: 'success', align: 'right', render: v => <Text style={{color: '#059669'}}>{v}</Text> },
+                                                    { title: 'TỶ LỆ THÀNH CÔNG', dataIndex: 'success_rate', render: v => <Tag color={getPerformanceColor(v)}>{v}%</Tag> },
+                                                    { title: 'QUÁ SLA (%)', dataIndex: 'sla_rate', render: v => <Tag color={v > 5 ? 'red' : 'default'}>{v}%</Tag> }
+                                                ]} pagination={false} size="small" />
+                                            </Col>
+                                            <Col span={8}>
+                                                <div style={{height: 250, width: '100%'}}>
+                                                    {LineChart && (
                                                         <ResponsiveContainer>
-                                                            <AreaChart data={trendData}>
-                                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                                                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fontSize: 10}} />
-                                                                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10}} />
+                                                            <LineChart data={trendData}>
+                                                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                                <XAxis dataKey="date" hide />
+                                                                <YAxis hide domain={[0, 'dataMax + 100']} />
                                                                 <Tooltip />
-                                                                <Legend verticalAlign="top" height={36}/>
-                                                                <Area name="Hướng Bắc" type="monotone" dataKey="north" stackId="1" stroke="#1890ff" fill="#1890ff" fillOpacity={0.1} />
-                                                                <Area name="Hướng Nam" type="monotone" dataKey="south" stackId="1" stroke="#f97316" fill="#f97316" fillOpacity={0.1} />
-                                                                <Area name="Nội tỉnh (Huế)" type="monotone" dataKey="intra" stackId="1" stroke="#722ed1" fill="#722ed1" fillOpacity={0.1} />
-                                                            </AreaChart>
+                                                                <Line name="Sản lượng" type="monotone" dataKey="total" stroke="#003a8c" strokeWidth={3} dot={{r:4}} />
+                                                                <Line name="Thành công" type="monotone" dataKey="success" stroke="#059669" strokeWidth={2} strokeDasharray="5 5" />
+                                                            </LineChart>
                                                         </ResponsiveContainer>
                                                     )}
+                                                    <div style={{textAlign: 'center', marginTop: 10}}><Text type="secondary" style={{fontSize: 10}}>BIỂU ĐỒ XU HƯỚNG SẢN LƯỢNG VÀ THÔNG SUỐT</Text></div>
                                                 </div>
-                                            </Col>
-                                            <Col span={6}>
-                                                <Space direction="vertical" style={{width: '100%'}} size="large">
-                                                    <Statistic title="Ngày cao điểm" value={trendKpis.peak_day || 'N/A'} />
-                                                    <Statistic title="TB Sản lượng" value={trendKpis.avg_volume} />
-                                                </Space>
                                             </Col>
                                         </Row>
                                     </div>
@@ -172,14 +168,14 @@
                             </Col>
 
                             {/* DIRECTIONAL CARDS */}
-                            <Col span={8}><Card className="executive-card"><Statistic title="Hướng Bắc" value={data.directions.north.total} /><Progress percent={nRate} strokeColor={getPerformanceColor(nRate)} /></Card></Col>
-                            <Col span={8}><Card className="executive-card" style={{borderColor: '#722ed1'}}><Statistic title="Nội tỉnh (Huế)" value={data.directions.intra.total} valueStyle={{color: '#722ed1'}} /><Progress percent={iRate} strokeColor="#722ed1" /></Card></Col>
-                            <Col span={8}><Card className="executive-card"><Statistic title="Hướng Nam" value={data.directions.south.total} /><Progress percent={sRate} strokeColor={getPerformanceColor(sRate)} /></Card></Col>
+                            <Col span={8}><Card className="executive-card"><Statistic title="Miền Bắc (Sync 234)" value={data.directions.north.total} /><Progress percent={nRate} strokeColor={getPerformanceColor(nRate)} /></Card></Col>
+                            <Col span={8}><Card className="executive-card" style={{borderColor: '#722ed1'}}><Statistic title="Nội tỉnh (Sync 14)" value={data.directions.intra.total} valueStyle={{color: '#722ed1'}} /><Progress percent={iRate} strokeColor="#722ed1" /></Card></Col>
+                            <Col span={8}><Card className="executive-card"><Statistic title="Miền Nam & Khác (Sync 616+)" value={data.directions.south.total} /><Progress percent={sRate} strokeColor={getPerformanceColor(sRate)} /></Card></Col>
 
                             {/* TABLES SECTION */}
                             <Col span={24}>
                                 <div className="executive-card">
-                                    <div className="section-header"><div className="section-indicator"></div><div className="section-title">Ma trận Hiệu suất Tỉnh phát</div></div>
+                                    <div className="section-header"><div className="section-indicator"></div><div className="section-title">Ma trận Hiệu suất Tỉnh phát (Top 15)</div></div>
                                     <div className="card-inner">
                                         <Table dataSource={provinceData} columns={[
                                             { title: 'PHÂN LOẠI', dataIndex: 'direction', render: v => <Tag color={v === 'Bắc' ? 'blue' : v === 'Nội tỉnh' ? 'purple' : 'orange'}>{v}</Tag> },
@@ -194,7 +190,7 @@
 
                             <Col span={14}>
                                 <div className="executive-card">
-                                    <div className="section-header"><div className="section-indicator"></div><div className="section-title">Hiệu suất Bưu cục Vận hành (Dự kiến)</div></div>
+                                    <div className="section-header"><div className="section-indicator"></div><div className="section-title">Hiệu suất Bưu cục Vận hành</div></div>
                                     <div className="card-inner">
                                         <Table dataSource={bcvhData} columns={[
                                             { title: 'BƯU CỤC', dataIndex: 'name', render: t => <Text strong>{t}</Text> },
