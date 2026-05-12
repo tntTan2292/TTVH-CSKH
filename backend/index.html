@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V4.0</title>
+    <title>VNPOST HUE - EXECUTIVE COMMAND CENTER V4.4 (SERVER MODE)</title>
     <!-- CORE LIBRARIES (STABLE) -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -48,6 +48,10 @@
         const { Text } = Typography;
         const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } = window.Recharts || {};
 
+        // SERVER CONFIG: DYNAMIC IP DETECTION
+        const SERVER_IP = window.location.hostname;
+        const API_BASE = `http://${SERVER_IP}:8010`;
+
         const getPerformanceColor = (rate) => {
             if (rate >= 90) return '#059669';
             if (rate >= 75) return '#003a8c';
@@ -64,7 +68,6 @@
             const [loading, setLoading] = useState(true);
             const [reportModal, setReportModal] = useState(false);
             const [reportContent, setReportContent] = useState("");
-            const API_BASE = "http://localhost:8010";
 
             const fetchAll = async () => {
                 setLoading(true);
@@ -81,7 +84,10 @@
                     setSlaRisk(Array.isArray(r) ? r : []);
                     setProvinceData(Array.isArray(p) ? p : []);
                     setTrendData(t.data || []);
-                } catch (err) { console.error(err); } 
+                } catch (err) { 
+                    console.error("API Error:", err);
+                    message.error("Không thể kết nối đến máy chủ dữ liệu!");
+                } 
                 finally { setLoading(false); }
             };
 
@@ -93,10 +99,10 @@
                     const file = e.target.files[0];
                     if (!file) return;
                     const formData = new FormData(); formData.append('file', file);
-                    const hide = message.loading('Đang chạy Forensic Trace V4.0...', 0);
+                    const hide = message.loading('Đang xử lý dữ liệu...', 0);
                     try {
                         const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: formData });
-                        if (res.ok) { message.success("Forensic Check Completed!"); fetchAll(); }
+                        if (res.ok) { message.success("Cập nhật thành công!"); fetchAll(); }
                         else message.error("Lỗi nạp File");
                     } catch (err) { message.error("Lỗi kết nối Server"); }
                     finally { hide(); }
@@ -105,7 +111,7 @@
             };
 
             if (loading && !data) return <div style={{padding: 100, textAlign: 'center'}}><Progress percent={100} status="active" showInfo={false} strokeColor="#003a8c" /></div>;
-            if (!data) return <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống V4.0 Forensic Ready" extra={<Button type="primary" onClick={handleUpload}>NHẬP DỮ LIỆU</Button>} /></div>;
+            if (!data) return <div style={{padding: 100, textAlign: 'center'}}><Result status="info" title="Hệ thống Điều hành TTVH - V4.4" extra={<Button type="primary" onClick={handleUpload}>NHẬP DỮ LIỆU ĐỐI SOÁT</Button>} /></div>;
 
             const nRate = data.directions.north.total > 0 ? Math.round(data.directions.north.success * 100 / data.directions.north.total) : 0;
             const sRate = data.directions.south.total > 0 ? Math.round(data.directions.south.success * 100 / data.directions.south.total) : 0;
@@ -149,7 +155,7 @@
                             {/* FLOW PERFORMANCE MATRIX */}
                             <Col span={24}>
                                 <div className="executive-card">
-                                    <div className="section-header"><div className="section-indicator" style={{background: '#003a8c'}}></div><div className="section-title">Ma trận Hiệu suất Dòng chảy Chấp nhận (Forensic Matrix)</div></div>
+                                    <div className="section-header"><div className="section-indicator" style={{background: '#003a8c'}}></div><div className="section-title">Ma trận Hiệu suất Dòng chảy Chấp nhận</div></div>
                                     <div className="card-inner">
                                         <Row gutter={24}>
                                             <Col span={16}>
@@ -182,7 +188,7 @@
                                 </div>
                             </Col>
 
-                            {/* DIRECTIONAL CARDS (REDESIGNED V4.0) */}
+                            {/* DIRECTIONAL CARDS */}
                             <Col span={8}><DirectionCard title="MIỀN BẮC" total={data.directions.north.total} success={data.directions.north.success} rate={nRate} /></Col>
                             <Col span={8}><DirectionCard title="NỘI TỈNH (HUẾ)" total={data.directions.intra.total} success={data.directions.intra.success} rate={iRate} /></Col>
                             <Col span={8}><DirectionCard title="MIỀN NAM & KHÁC" total={data.directions.south.total} success={data.directions.south.success} rate={sRate} /></Col>
